@@ -9,7 +9,19 @@ from batchiq.adapters.base import ActionCommand, SchedulerAdapter
 from batchiq.adapters.registry import register
 from batchiq.config import settings
 from batchiq.core.artifacts import file_artifact, table_artifact
-from batchiq.domain.models import Dependency, DependencyOrigin, Job, JobKind, JobRun, RunStatus, Scheduler, Vendor
+from batchiq.discovery.sources import SourceRef
+from batchiq.domain.models import (
+    Artifact,
+    ArtifactType,
+    Dependency,
+    DependencyOrigin,
+    Job,
+    JobKind,
+    JobRun,
+    RunStatus,
+    Scheduler,
+    Vendor,
+)
 
 _STATUS = {"Succeeded": RunStatus.SUCCEEDED, "Failed": RunStatus.FAILED, "InProgress": RunStatus.RUNNING,
            "Queued": RunStatus.WAITING, "Cancelled": RunStatus.CANCELLED}
@@ -63,7 +75,10 @@ class ADFAdapter(SchedulerAdapter):
                         at = time(s["hours"][0], s["minutes"][0])
                         schedule = f"Daily at {at.strftime('%H:%M')}"
                     elif ttype == "CustomEventsTrigger":
-                        schedule = "On custom event: " + trig["typeProperties"]["subjectBeginsWith"]
+                        subject = trig["typeProperties"]["subjectBeginsWith"]
+                        consumes.append(Artifact(type=ArtifactType.EVENT, raw=subject,
+                                                 canonical=f"event:{subject.lower()}", match="prefix"))
+                        schedule = "On custom event: " + subject
                 else:
                     schedule = "After upstream activity"
                 jobs.append(Job(
@@ -91,6 +106,10 @@ class ADFAdapter(SchedulerAdapter):
                 start=start, end=end, duration_s=r["durationInMs"] / 1000 if r["durationInMs"] else None,
                 error_code=err.get("errorCode"), message=err.get("message")))
         return out
+
+    def source_refs(self, job: Job) -> list[SourceRef]:
+        # The pipeline's ARM/JSON definition in git; referenced notebooks are followed by the miner.
+        return [SourceRef(f"pipeline/{job.container}.json", section=job.name)]
 
     def build_action(self, job: Job, action: str) -> ActionCommand:
         rg, df = "rg-cust-prd", "adf-cust-prd"

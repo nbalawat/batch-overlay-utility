@@ -9,18 +9,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from batchiq.api.deps import get_service
-from batchiq.api.routes import estate, intelligence
+from batchiq.api.routes import estate, intelligence, knowledge
 from batchiq.config import settings
 
 
 def create_app() -> FastAPI:
     logging.basicConfig(level=logging.INFO)
-    app = FastAPI(title="Batch Intelligence Overlay", version="0.1.0",
+    app = FastAPI(title="Batch Intelligence Overlay", version="0.2.0",
                   description="AI system of engagement over Control-M, AutoSys, Airflow and cloud schedulers.")
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins.split(","), allow_methods=["*"],
                        allow_headers=["*"])
     app.include_router(estate.router, prefix="/api")
     app.include_router(intelligence.router, prefix="/api")
+    app.include_router(knowledge.router, prefix="/api")
 
     @app.get("/healthz", include_in_schema=False)
     def healthz():

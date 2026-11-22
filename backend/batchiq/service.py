@@ -5,7 +5,9 @@ assistant need. This is the only module that knows the whole pipeline.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+import time
+from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -21,20 +23,32 @@ from batchiq.adapters.airflow.simulator import AirflowSimulator
 from batchiq.adapters.autosys.simulator import AutoSysSimulator
 from batchiq.adapters.base import SchedulerAdapter
 from batchiq.adapters.controlm.simulator import ControlMSimulator
+from batchiq.analysis.context import AnalysisInputs
+from batchiq.analysis.findings import Finding
+from batchiq.analysis.runtime import run_runtime
+from batchiq.analysis.static import run_static
 from batchiq.config import settings
 from batchiq.core.business import BusinessMapper, load_catalogue
-from batchiq.core.correlation import CorrelationEngine
 from batchiq.core.graph import LineageGraph
 from batchiq.core.stats import JobBaseline, compute_baselines
 from batchiq.core.store import InMemoryEstate
+from batchiq.discovery.miner import MinedFact, SourceMiner
 from batchiq.domain.models import Incident, RunStatus, Service, Vendor
 from batchiq.intelligence.forecast import Forecaster, JobForecast, ProcessForecast
 from batchiq.intelligence.insights import Insight, InsightEngine
 from batchiq.intelligence.knowledge import TfidfKnowledgeBase
 from batchiq.intelligence.state import JobState, compute_states
-from batchiq.simulation.estate import INCIDENT_HISTORY, SCHEDULERS, jobs_for
+from batchiq.knowledge.builder import KGInputs, KnowledgeGraphBuilder
+from batchiq.knowledge.graph import KnowledgeGraph
+from batchiq.linking.evidence import LinkContext
+from batchiq.linking.recommender import Candidate, LinkRecommender
+from batchiq.linking.review import Directory, ReviewStore
+from batchiq.simulation.estate import INCIDENT_HISTORY, JOBS, SCHEDULERS, jobs_for
 from batchiq.simulation.history import HistoryGenerator
+from batchiq.simulation.review_history import REVIEW_HISTORY
 from batchiq.simulation.scenarios import SCENARIOS
+from batchiq.simulation.sources import SimulatedSourceRepository
+from batchiq.views.changelog import build_changelog
 
 _SIMULATORS = {Vendor.CONTROL_M: ControlMSimulator, Vendor.AIRFLOW: AirflowSimulator,
                Vendor.AUTOSYS: AutoSysSimulator, Vendor.ADF: ADFSimulator}
@@ -53,17 +67,40 @@ class Analysis:
     services: dict[str, Service]
     insights: list[Insight]
     engine: InsightEngine
+    kg: KnowledgeGraph | None = None
+    findings: list[Finding] = field(default_factory=list)
+    inputs: AnalysisInputs | None = None
 
 
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat(timespec="minutes") if dt else None
 
 
+def run_windows(estate: InMemoryEstate) -> dict[str, dict[str, tuple[datetime, datetime]]]:
+    """job -> business date -> (start, end) of its successful run, over history."""
+    out: dict[str, dict[str, tuple[datetime, datetime]]] = defaultdict(dict)
+    for jid in estate.jobs():
+        for r in estate.history_runs(jid):
+            if r.status == RunStatus.SUCCEEDED and r.start and r.end:
+                out[jid][r.business_date] = (r.start, r.end)
+    return out
+
+
 class EstateService:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self.adapters: dict[str, SchedulerAdapter] = {}
+        self.repos: dict[str, SimulatedSourceRepository] = {}
         self.a: Analysis | None = None
+        self.directory = Directory(settings.people_directory)
+        self.reviews = ReviewStore(self.directory)
+        self.recommender = LinkRecommender()
+        self.candidates: dict[str, Candidate] = {}
+        self.mined: dict[str, list[MinedFact]] = {}
+        self.windows: dict[str, dict[str, tuple[datetime, datetime]]] = {}
+        self.pipeline: dict[str, dict[str, Any]] = {}
+        self.changelog_entries: list[dict[str, Any]] | None = None
+        self._seeded = False
         self.scenario_id = settings.scenario
         self.load(self.scenario_id)
 
@@ -73,37 +110,72 @@ class EstateService:
             return date.fromisoformat(settings.today)
         return datetime.now(ZoneInfo(settings.estate_timezone)).date()
 
+    def _connect(self, specs: tuple, raw_runs: list, now: datetime) -> tuple[dict, dict]:
+        tz = ZoneInfo(settings.estate_timezone)
+        adapters, repos = {}, {}
+        for spec in SCHEDULERS:
+            client = _SIMULATORS[spec.vendor](spec, jobs_for(spec.id, specs), raw_runs, now, tz)
+            adapters[spec.id] = registry.create(spec.vendor.value, client)
+            repos[spec.id] = SimulatedSourceRepository(spec, jobs_for(spec.id, specs))
+        return adapters, repos
+
     def load(self, scenario_id: str) -> None:
         with self._lock:
             scenario = SCENARIOS[scenario_id]
             today = self._today()
             raw_runs, now = HistoryGenerator(settings.seed).generate(scenario, today)
-            tz = ZoneInfo(settings.estate_timezone)
-            self.adapters = {}
-            for spec in SCHEDULERS:
-                client = _SIMULATORS[spec.vendor](spec, jobs_for(spec.id), raw_runs, now, tz)
-                self.adapters[spec.id] = registry.create(spec.vendor.value, client)
+            self.adapters, self.repos = self._connect(JOBS, raw_runs, now)
             estate = InMemoryEstate(now=now, business_date=(today.fromordinal(today.toordinal() - 1)).isoformat(),
                                     scenario_id=scenario_id)
-            # 1) Ingest + normalise every connector.
+            miner = SourceMiner()
+            self.pipeline = {}
+            # 1) Ingest and normalise every connector, then mine each job's source code.
             for sid, adapter in self.adapters.items():
+                t0 = time.perf_counter()
                 snap = adapter.sync(now)
+                t1 = time.perf_counter()
                 estate.schedulers[sid] = snap.scheduler
                 estate.add_jobs(snap.jobs)
                 estate.add_dependencies(snap.dependencies)
                 estate.add_runs(snap.runs)
+                files_before = miner.stats["files"]
+                for job in snap.jobs:
+                    self.mined[job.id] = miner.mine(job, adapter.source_refs(job), self.repos[sid])
+                t2 = time.perf_counter()
                 estate.sync_stats[sid] = {**snap.stats, "last_sync": _iso(now), "status": "connected",
                                           "mode": "simulated"}
-            # 2) Correlate across schedulers.
-            estate.add_dependencies(CorrelationEngine(estate).run())
-            # 3) Business context + knowledge base.
+                self.pipeline[sid] = {
+                    "definitions": len(snap.jobs), "declared_dependencies": len(snap.dependencies),
+                    "runs": len(snap.runs), "source_files": miner.stats["files"] - files_before,
+                    "source_repo": self.repos[sid].describe()["location"],
+                    "mined_facts": sum(len(self.mined[j.id]) for j in snap.jobs),
+                    "ingest_ms": round((t1 - t0) * 1000, 1), "mine_ms": round((t2 - t1) * 1000, 1)}
+            # 2) Business context and knowledge base (incidents also feed link evidence).
             processes, services = load_catalogue(settings.business_map)
             estate.processes, estate.services = processes, services
             estate.incidents = [Incident(id=i.id, date=i.date, title=i.title, scheduler=i.vendor, jobs=list(i.jobs),
                                          error_code=i.error_code, symptoms=i.symptoms, root_cause=i.root_cause,
                                          resolution=i.resolution, mttr_minutes=i.mttr_minutes)
                                 for i in INCIDENT_HISTORY]
+            # 3) Recommend links across and within ecosystems; people decide which ones are real.
+            t0 = time.perf_counter()
+            self.windows = run_windows(estate)
+            declared = list(estate.dependencies().values())
+            ctx = LinkContext(estate.jobs(), declared, self.mined, self.windows, estate.incidents)
+            facts, cands = self.recommender.run(ctx)
+            estate.add_dependencies(facts)
+            self.reviews.sync(cands, estate.jobs(), now)
+            if not self._seeded:
+                for link_id, events in REVIEW_HISTORY.items():
+                    self.reviews.seed(link_id, events, now)
+                self._seeded = True
+            self.candidates = {c.id: c for c in cands}
+            estate.add_dependencies([LinkRecommender.to_dependency(c, estate.jobs(), self.reviews.dependency_state(c.id))
+                                     for c in cands])
+            self.link_ms = round((time.perf_counter() - t0) * 1000, 1)
             self.scenario_id = scenario_id
+            if self.changelog_entries is None:
+                self.changelog_entries = build_changelog(self, estate, now)
             self._analyse(estate)
 
     def _analyse(self, estate: InMemoryEstate) -> None:
@@ -117,6 +189,18 @@ class EstateService:
         a = Analysis(estate, graph, mapper, baselines, states, job_fc, proc_fc, kb, estate.services, [], None)  # type: ignore[arg-type]
         a.engine = InsightEngine(a)
         a.insights = a.engine.run()
+        link_states = {lid: r.state.value for lid, r in self.reviews.records.items() if lid in estate.dependencies()}
+        a.kg = KnowledgeGraphBuilder().build(KGInputs(
+            schedulers=estate.schedulers, jobs=estate.jobs(), dependencies=list(estate.dependencies().values()),
+            mined=self.mined, runs=dict(estate.runs_by_job), business_date=estate.business_date,
+            baselines=baselines, processes=estate.processes, services=estate.services, mapper=mapper,
+            incidents=estate.incidents, directory=self.directory, link_states=link_states))
+        changed = {c["job_id"]: c["change"]["id"] for e in self.changelog_entries or [] for c in e["changes"]
+                   if c.get("change")}
+        x = AnalysisInputs(estate, graph, a.kg, mapper, baselines, proc_fc, self.mined, link_states, self.windows,
+                           changed)
+        a.findings = run_static(x) + run_runtime(x)
+        a.inputs = x
         self.a = a
 
     def reanalyse(self) -> None:
@@ -335,16 +419,6 @@ class EstateService:
                  "receipt": {"accepted": True, "simulated": True, "channel": "email/teams (simulated)"}}
         self.a.estate.audit.append(entry)
         return entry
-
-    def review_dependency(self, dep_id: str, decision: str, actor: str) -> dict[str, Any]:
-        with self._lock:
-            d = self.a.estate.dependencies()[dep_id]
-            d.review_state = "confirmed" if decision == "confirm" else "rejected"
-            self.a.estate.audit.append({"at": _iso(self.a.estate.now), "actor": actor, "action": decision,
-                                        "dependency_id": dep_id, "command": f"lineage {decision}",
-                                        "receipt": {"accepted": True}})
-            self.reanalyse()
-            return d.model_dump(mode="json")
 
     def audit(self) -> list[dict[str, Any]]:
         return list(reversed(self.a.estate.audit))

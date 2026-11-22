@@ -6,6 +6,7 @@ import json
 import re
 from typing import Any
 
+from batchiq.assistant.graph_tools import GRAPH_TOOL_INDEX, GRAPH_TOOLS
 from batchiq.llm.base import ToolSpec
 from batchiq.service import EstateService
 
@@ -21,7 +22,7 @@ TOOLS: list[ToolSpec] = [
              _schema({})),
     ToolSpec("list_insights", "AI insights (failures, SLA risks, anomalies, suggested hidden dependencies), "
              "most severe first.", _schema({"type": {"type": "string",
-                                                     "enum": ["failure", "sla_risk", "anomaly", "correlation"]}})),
+                                                     "enum": ["failure", "sla_risk", "anomaly", "correlation", "stale_data"]}})),
     ToolSpec("get_business_process", "Status, SLA forecast, critical path and jobs of one business process. "
              "Accepts an id or words from its name, e.g. 'regulatory' or 'payments'.",
              _schema({"process": {"type": "string"}}, ["process"])),
@@ -36,6 +37,7 @@ TOOLS: list[ToolSpec] = [
              _schema({"job": {"type": "string"}, "process": {"type": "string"}})),
     ToolSpec("search_incident_history", "Search the knowledge base of past incidents and their resolutions.",
              _schema({"query": {"type": "string"}}, ["query"])),
+    *(t.spec for t in GRAPH_TOOLS),
 ]
 
 
@@ -74,6 +76,8 @@ class ToolBox:
 
     def call(self, name: str, args: dict[str, Any]) -> Any:
         svc = self.svc
+        if name in GRAPH_TOOL_INDEX:
+            return GRAPH_TOOL_INDEX[name].run(svc, args)
         if name == "get_estate_overview":
             o = svc.overview()
             return {"kpis": o["kpis"], "now": o["meta"]["now"],

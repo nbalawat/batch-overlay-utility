@@ -12,6 +12,8 @@ interface EstateCtx {
   receipts: ActionReceipt[];
   pushReceipt: (r: ActionReceipt) => void;
   dismissReceipt: (i: number) => void;
+  person: string;                        // who is reviewing links (persona switcher)
+  setPerson: (id: string) => void;
 }
 
 const Ctx = createContext<EstateCtx | null>(null);
@@ -21,6 +23,8 @@ export function EstateProvider({ children }: { children: ReactNode }) {
   const [version, setVersion] = useState(0);
   const [jobId, openJob] = useState<string | null>(null);
   const [receipts, setReceipts] = useState<ActionReceipt[]>([]);
+  const [person, setPersonState] = useState<string>(() => localStorage.getItem("batchiq.person") ?? "agarcia");
+  const setPerson = useCallback((id: string) => { localStorage.setItem("batchiq.person", id); setPersonState(id); }, []);
 
   useEffect(() => { api.meta().then(setMeta).catch(console.error); }, []);
 
@@ -34,7 +38,7 @@ export function EstateProvider({ children }: { children: ReactNode }) {
   const dismissReceipt = useCallback((i: number) => setReceipts((rs) => rs.filter((_, k) => k !== i)), []);
 
   return (
-    <Ctx.Provider value={{ meta, version, switchScenario, refresh, jobId, openJob, receipts, pushReceipt, dismissReceipt }}>
+    <Ctx.Provider value={{ meta, version, switchScenario, refresh, jobId, openJob, receipts, pushReceipt, dismissReceipt, person, setPerson }}>
       {children}
     </Ctx.Provider>
   );

@@ -2,18 +2,30 @@ import { NavLink, Route, Routes } from "react-router-dom";
 import { JobDrawer } from "./components/JobDrawer";
 import { useEstate } from "./lib/estate";
 import { Ask } from "./pages/Ask";
+import { Changes } from "./pages/Changes";
+import { EcosystemDetailPage, EcosystemList } from "./pages/Ecosystems";
+import { Findings } from "./pages/Findings";
+import { Knowledge } from "./pages/Knowledge";
+import { Links } from "./pages/Links";
+import { OnboardingPage } from "./pages/Onboarding";
 import { CommandCenter } from "./pages/CommandCenter";
 import { Connectors } from "./pages/Connectors";
 import { Insights } from "./pages/Insights";
 import { Lineage } from "./pages/Lineage";
 import { ProcessDetailPage, ProcessList } from "./pages/Processes";
 
-const NAV = [
+const NAV: [string, string, string][] = [
   ["/", "Command center", "◎"],
   ["/processes", "Business processes", "▤"],
+  ["/ecosystems", "Ecosystems", "▦"],
   ["/lineage", "Cross-scheduler lineage", "⇄"],
+  ["/knowledge", "Knowledge graph", "⬡"],
+  ["/links", "Link review", "✓"],
+  ["/findings", "Findings", "⚑"],
   ["/insights", "AI insights", "✦"],
+  ["/changes", "What changed", "↻"],
   ["/ask", "Ask the estate", "?"],
+  ["/onboarding", "Onboarding", "⇪"],
   ["/connectors", "Connectors", "⛁"],
 ];
 
@@ -81,6 +93,13 @@ export default function App() {
           <Route path="/insights" element={<Insights />} />
           <Route path="/ask" element={<Ask />} />
           <Route path="/connectors" element={<Connectors />} />
+          <Route path="/ecosystems" element={<EcosystemList />} />
+          <Route path="/ecosystems/:id" element={<EcosystemDetailPage />} />
+          <Route path="/knowledge" element={<Knowledge />} />
+          <Route path="/links" element={<Links />} />
+          <Route path="/findings" element={<Findings />} />
+          <Route path="/changes" element={<Changes />} />
+          <Route path="/onboarding" element={<OnboardingPage />} />
         </Routes>
       </main>
       <JobDrawer />

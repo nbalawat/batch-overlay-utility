@@ -49,7 +49,7 @@ def test_cross_scheduler_links_found(svc):
     assert deps["ctm-prd::PAYMENTS_SETTLEMENT/PAY_SETTLE_NET->autosys-ae1::PAY_ACH_FILE_GEN"].origin == "artifact"
     hidden = deps["airflow-dp::fraud_features.publish_scores->adf-prd::pl_customer360_refresh/c360_merge"]
     assert hidden.origin == "inferred" and hidden.review_state == "suggested"
-    assert {e.kind for e in hidden.evidence} == {"data-name-match", "temporal"}
+    assert {"data-name-match", "event-match", "code-artifact-match", "temporal"} <= {e.kind for e in hidden.evidence}
 
 
 def test_process_spans_schedulers(svc):

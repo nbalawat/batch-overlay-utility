@@ -42,7 +42,7 @@ export interface ProcessBrief {
 
 export interface Recommendation {
   id: string; title: string; rationale: string; source?: string;
-  action?: { action: string; job_id?: string; process_id?: string; dependency_id?: string };
+  action?: { action: string; job_id?: string; process_id?: string; link_id?: string };
 }
 export interface Hypothesis { job_id: string; kind: string; confidence: number; reason: string; depth: number; origin?: boolean }
 export interface SimilarIncident {
@@ -55,7 +55,7 @@ export interface Impact {
   services: string[];
 }
 export interface Insight {
-  id: string; type: "failure" | "sla_risk" | "anomaly" | "correlation";
+  id: string; type: "failure" | "sla_risk" | "anomaly" | "correlation" | "stale_data";
   severity: "critical" | "high" | "medium" | "low" | "info";
   title: string; summary: string; detected_at: string; job_ids: string[]; process_ids: string[];
   scheduler_ids: string[]; evidence: string[]; impact: Impact; root_cause: Hypothesis[];
@@ -102,4 +102,105 @@ export interface ActionReceipt {
 export interface AskResponse {
   answer: string; provider: string; model: string; note: string | null;
   tool_trace: { tool: string; input: Record<string, unknown> }[];
+}
+
+// ---------------------------------------------------------------------- v2: ecosystems, knowledge graph, links
+export type Severity = "high" | "medium" | "low" | "info";
+export interface Finding {
+  id: string; kind: "static" | "runtime"; category: string; severity: Severity; title: string; detail: string;
+  recommendation: string; scope: string; job_ids: string[]; process_ids: string[]; evidence: string[];
+  metrics: Record<string, unknown>; link_id: string | null;
+}
+export interface FindingsResponse {
+  findings: Finding[];
+  summary: { total: number; shown: number; by_kind: Record<string, number>; by_severity: Record<Severity, number>;
+    by_scope: Record<string, number>; categories: { kind: string; category: string; title: string; count: number }[] };
+}
+
+export interface PipelineStats {
+  definitions: number; declared_dependencies: number; runs: number; source_files: number; source_repo: string;
+  mined_facts: number; ingest_ms: number; mine_ms: number;
+}
+export interface EcosystemBrief {
+  id: string; name: string; vendor: string; vendor_label: string; environment: string; description: string;
+  container_kind: string; containers: number; jobs: number; hosts: number; teams: number; intra_links: number;
+  cross_links: number; cross_pending: number; processes: number; findings: Record<Severity, number>;
+  pipeline: PipelineStats;
+}
+export interface EcoJob extends JobBrief {
+  team: string | null; host: string | null; schedule: string | null; alerting: boolean | null;
+  unresolved_conditions: string[]; mined_facts: number;
+}
+export interface EcosystemDetail {
+  id: string; name: string; vendor: string; vendor_label: string; environment: string; description: string;
+  container_kind: string; containers: { name: string; jobs: EcoJob[] }[];
+  graph: Graph & { nodes: (JobBrief & { external: boolean })[] };
+  stats: Record<string, number>; hosts: { host: string; jobs: number }[];
+  outputs: { id: string; label: string; type: string; writers: number }[];
+  inputs: { id: string; label: string; type: string; readers: number }[];
+  findings: Finding[]; pipeline: PipelineStats; suggested_questions: string[];
+}
+
+export interface KgNode { id: string; type: string; label: string; props: Record<string, unknown> }
+export interface KgEdge {
+  id: string; source: string; target: string; type: string; provenance: string[]; confidence: number;
+  refs: string[]; props: Record<string, unknown>;
+}
+export interface Ontology {
+  nodes: { type: string; description: string; examples: string; count: number }[];
+  edges: { type: string; source: string[]; target: string[]; description: string; count: number }[];
+  provenance: { id: string; description: string; count: number }[];
+  stats: { nodes: number; edges: number };
+}
+export interface KgNodeDetail {
+  node: KgNode;
+  relations: { direction: "in" | "out"; type: string; edges: (KgEdge & { other: KgNode })[] }[];
+}
+export interface KgSubgraph { center: string; nodes: KgNode[]; edges: KgEdge[]; truncated: boolean }
+export interface KgPaths { from: KgNode; to: KgNode; directed: boolean; paths: { hops: KgNode[]; edges: KgEdge[] }[] }
+
+export type LinkState = "proposed" | "in_review" | "needs_info" | "approved" | "rejected";
+export interface Person { id: string; name: string; title: string; team: string; governance: boolean; team_name?: string; waiting?: number }
+export interface LinkJob {
+  id: string; name: string; container: string; scheduler_id: string; vendor: string; vendor_label: string;
+  team: string | null; team_name: string | null; scheduled_time: string | null; processes: string[];
+}
+export interface ReviewEvent { at: string; actor: string; actor_name?: string; team?: string; event: string; detail: string }
+export interface LinkCard {
+  id: string; source: LinkJob; target: LinkJob; probability: number; state: LinkState; dependency_state: string;
+  cross_scheduler: boolean; artifact: string | null; definitional: boolean; fast_track: boolean; kinds: string[];
+  evidence: (Evidence & { source: string })[];
+  required: { team: string; name: string; approved: boolean; approval: { name: string; at: string; comment: string } | null;
+    members: Person[] }[];
+  proposed_at: string | null; last_event: ReviewEvent | null; findings: string[];
+  history?: ReviewEvent[];
+  impact?: { process_id: string; name: string; jobs_gained: number; jobs: string[] }[];
+  race_nights?: { races: number; nights: number; dates: string[] };
+}
+export interface LinkQueue { links: LinkCard[]; counts: Record<LinkState, number>; policy: string[]; person: Person | null }
+
+export interface ChangeEntry {
+  sync: string; business_date: string; nodes_before: number; nodes_after: number; edges_before: number; edges_after: number;
+  changes: { job_id: string; name: string; scheduler_id: string; kind: string; details: string[];
+    change: { id: string; ticket: string; author: string; summary: string } | null;
+    follow_ups: { link_id: string; probability: number; state: LinkState | null }[] }[];
+}
+
+export interface Onboarding {
+  connectors: (PipelineStats & { scheduler_id: string; name: string; vendor: string })[];
+  stages: { id: string; title: string; detail: string }[];
+  totals: { definitions: number; source_files: number; mined_facts: number; runs: number };
+}
+export interface Sample { id: string; vendor: string; vendor_label: string; file: string; scheduler_id: string; name: string; format: string; content: string }
+export interface ImportResult {
+  scheduler: { id: string; name: string; vendor: string; vendor_label: string };
+  jobs: { id: string; name: string; container: string; host: string | null; team: string | null; schedule: string | null;
+    produces: string[]; consumes: string[]; alerting: boolean | null; unresolved_conditions: string[] }[];
+  dependencies: { source: string; target: string; artifact: string | null }[];
+  graph: { nodes: number; edges: number; nodes_by_type: Record<string, number> };
+  checks: { severity: Severity; job: string; message: string }[];
+  external_inputs: string[];
+  proposed_links: { source: { id: string; name: string; scheduler_id: string }; target: { id: string; name: string; scheduler_id: string };
+    artifact: string; probability: number; evidence: Evidence; direction: string }[];
+  next_steps: string[];
 }

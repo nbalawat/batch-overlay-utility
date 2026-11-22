@@ -30,7 +30,7 @@ class AutoSysSimulator(SimulatedClient):
                        "".join(f" --out {_as_path(a)}" for a in s.produces)
                 lines += ["", f"insert_job: {s.name}   job_type: CMD", f"box_name: {box}",
                           f"command: {s.command}{args}", f"machine: {s.host}", f"owner: {s.owner}@AE1",
-                          f"application: {s.app}", "alarm_if_fail: 1"]
+                          f"application: {s.app}", f"alarm_if_fail: {1 if s.alarm else 0}"]
                 if s.after:
                     lines.append("condition: " + " & ".join(f"s({p})" for p in s.after))
                 if s.at:

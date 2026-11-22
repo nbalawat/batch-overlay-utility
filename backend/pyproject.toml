@@ -24,7 +24,7 @@ dev = ["pytest>=8", "pytest-xdist>=3.6", "ruff>=0.4"]
 include = ["batchiq*"]
 
 [tool.setuptools.package-data]
-batchiq = ["catalog/*.yaml"]
+batchiq = ["catalog/*.yaml", "catalog/samples/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

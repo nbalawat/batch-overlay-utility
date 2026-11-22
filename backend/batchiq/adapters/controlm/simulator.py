@@ -46,6 +46,11 @@ class ControlMSimulator(SimulatedClient):
             if succ:
                 job["eventsToAdd"] = {"Type": "AddEvents",
                                       "Events": [{"Event": f"{s.name}-TO-{n}"} for n in succ]}
+            if s.alarm:
+                job["IfBase:Folder:CompletionStatus_0"] = {
+                    "Type": "If:CompletionStatus", "CompletionStatus": "NOTOK",
+                    "Mail_0": {"Type": "Action:Mail", "To": f"{s.owner}@bank.example",
+                               "Subject": f"%%JOBNAME ended NOTOK on {s.host}"}}
             folder[s.name] = job
         return folders
 

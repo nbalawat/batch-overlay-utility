@@ -18,6 +18,8 @@ class Settings:
     today: str = field(default_factory=lambda: _env("BATCHIQ_TODAY", ""))  # YYYY-MM-DD, blank = real date
     business_map: Path = field(default_factory=lambda: Path(_env(
         "BATCHIQ_BUSINESS_MAP", str(Path(__file__).parent / "catalog" / "business_processes.yaml"))))
+    people_directory: Path = field(default_factory=lambda: Path(_env(
+        "BATCHIQ_PEOPLE", str(Path(__file__).parent / "catalog" / "people.yaml"))))
     # LLM provider: auto | anthropic | openai_compatible | offline
     llm_provider: str = field(default_factory=lambda: _env("LLM_PROVIDER", "auto"))
     llm_model: str = field(default_factory=lambda: _env("LLM_MODEL", "claude-opus-5-5"))

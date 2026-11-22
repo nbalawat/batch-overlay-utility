@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
 from batchiq.domain.models import JobKind, RunStatus
-from batchiq.simulation.estate import JOBS, JOBS_BY_KEY, JobSpec
+from batchiq.simulation.estate import JobSpec, specs_as_of
 from batchiq.simulation.scenarios import FailAndRerun, Scenario
 
 BATCH_WINDOW_START = time(20, 0)
@@ -57,53 +57,67 @@ def _basename(artifact: str) -> str:
     return artifact.split(":", 1)[1].rstrip("/").rsplit("/", 1)[-1]
 
 
-def _producer_of(artifact: str) -> str | None:
-    for spec in JOBS:
-        if artifact in spec.produces:
-            return spec.key
-    base = _basename(artifact)
-    for spec in JOBS:
-        for p in spec.produces:
-            if _basename(p).startswith(base) and base:
+class NightPlan:
+    """The true dependency graph for one night's definitions."""
+
+    def __init__(self, specs: tuple[JobSpec, ...]) -> None:
+        self.specs = specs
+        self.by_key = {s.key: s for s in specs}
+        self.preds = {s.key: self._true_predecessors(s) for s in specs}
+        self.order = self._topo_order()
+
+    def _producer_of(self, artifact: str) -> str | None:
+        for spec in self.specs:
+            if artifact in spec.produces:
                 return spec.key
-    return None
+        base = _basename(artifact)
+        for spec in self.specs:
+            for p in spec.produces:
+                if base and _basename(p).startswith(base):
+                    return spec.key
+        return None
 
+    def _true_predecessors(self, spec: JobSpec) -> list[str]:
+        preds = [_sibling_key(spec, n) for n in spec.after]   # may name a job that no longer exists
+        for a in spec.consumes:
+            p = self._producer_of(a)
+            if p and p != spec.key:
+                preds.append(p)
+        preds.extend(spec.hidden_after)
+        return preds
 
-def _topo_order() -> list[JobSpec]:
-    preds = {s.key: _true_predecessors(s) for s in JOBS}
-    done: list[JobSpec] = []
-    seen: set[str] = set()
+    def _topo_order(self) -> list[JobSpec]:
+        done: list[JobSpec] = []
+        seen: set[str] = set()
 
-    def visit(k: str) -> None:
-        if k in seen:
-            return
-        seen.add(k)
-        for p in preds[k]:
-            visit(p)
-        done.append(JOBS_BY_KEY[k])
+        def visit(k: str) -> None:
+            if k in seen or k not in self.by_key:
+                return
+            seen.add(k)
+            for p in self.preds[k]:
+                visit(p)
+            done.append(self.by_key[k])
 
-    for s in JOBS:
-        visit(s.key)
-    return done
+        for s in self.specs:
+            visit(s.key)
+        return done
 
 
 def _sibling_key(spec: JobSpec, name: str) -> str:
     return JobSpec(spec.vendor, spec.scheduler_id, spec.container, name, 0).key
 
 
-def _true_predecessors(spec: JobSpec) -> list[str]:
-    preds = [_sibling_key(spec, n) for n in spec.after]
-    for a in spec.consumes:
-        p = _producer_of(a)
-        if p and p != spec.key:
-            preds.append(p)
-    preds.extend(spec.hidden_after)
-    return preds
-
-
 class HistoryGenerator:
     def __init__(self, seed: int = 7) -> None:
         self.seed = seed
+        self._plans: dict[tuple[str, ...], NightPlan] = {}
+
+    def _plan(self, nights_ago: int) -> NightPlan:
+        specs = specs_as_of(nights_ago)
+        sig = tuple(f"{s.key}|{s.at}|{s.after}|{s.host}" for s in specs)
+        if sig not in self._plans:
+            self._plans[sig] = NightPlan(specs)
+        return self._plans[sig]
 
     def generate(self, scenario: Scenario, today: date) -> tuple[list[RawRun], datetime]:
         """Return all runs (history + tonight) and the simulated 'now'."""
@@ -113,9 +127,9 @@ class HistoryGenerator:
         for i in range(HISTORY_NIGHTS, 0, -1):
             bd = tonight - timedelta(days=i)
             rng = random.Random(f"{self.seed}-night-{i}")  # index-based: stable whatever the date
-            runs.extend(self._simulate_night(bd, rng, scenario=None, cutoff=None))
+            runs.extend(self._simulate_night(self._plan(i), bd, rng, scenario=None, cutoff=None, nights_ago=i))
         rng = random.Random(f"{self.seed}-tonight-{scenario.id}")
-        runs.extend(self._simulate_night(tonight, rng, scenario=scenario, cutoff=now))
+        runs.extend(self._simulate_night(self._plan(0), tonight, rng, scenario=scenario, cutoff=now, nights_ago=0))
         return runs, now
 
     # ------------------------------------------------------------------ internals
@@ -128,8 +142,8 @@ class HistoryGenerator:
             f *= 1.25
         return f
 
-    def _simulate_night(self, bd: date, rng: random.Random, scenario: Scenario | None,
-                        cutoff: datetime | None) -> list[RawRun]:
+    def _simulate_night(self, plan: NightPlan, bd: date, rng: random.Random, scenario: Scenario | None,
+                        cutoff: datetime | None, nights_ago: int) -> list[RawRun]:
         ends: dict[str, datetime] = {}
         out: list[RawRun] = []
         vol = self._volume_factor(bd) if scenario is None else 1.0
@@ -137,8 +151,8 @@ class HistoryGenerator:
         slow = {s.job: s.factor for s in (scenario.slowdowns if scenario else ())}
         historic_fail_p = 0.0 if scenario else 0.012
 
-        for spec in _topo_order():
-            preds = _true_predecessors(spec)
+        for spec in plan.order:
+            preds = plan.preds[spec.key]
             pred_ends = [ends[p] for p in preds if p in ends]
             if len(pred_ends) < len(preds):
                 # Upstream never completed tonight: this job cannot have started.
@@ -146,13 +160,13 @@ class HistoryGenerator:
                     if spec.kind == JobKind.SENSOR and spec.at and at_on_night(bd, spec.at) <= cutoff:
                         # A sensor with its own schedule keeps poking for the missing input.
                         out.append(RawRun(spec.key, bd, 1, RunStatus.RUNNING, at_on_night(bd, spec.at), None))
-                    continue
+                continue
             start = self._start_time(spec, bd, pred_ends, rng)
             minutes = spec.minutes if spec.kind != JobKind.SENSOR else 0.0
             if spec.kind != JobKind.SENSOR:
                 minutes = spec.minutes * math.exp(rng.gauss(0, spec.jitter)) * (
                     vol if spec.app in ("CORE", "PAYMENTS", "finance", "risk") else 1.0)
-                minutes *= slow.get(spec.key, 1.0)
+                minutes *= slow.get(spec.key, 1.0) * (1 + spec.growth) ** (HISTORY_NIGHTS - nights_ago)
             if spec.kind == JobKind.SENSOR:
                 end = max(pred_ends) + timedelta(minutes=1) if pred_ends else start + timedelta(minutes=1)
             else:
@@ -160,7 +174,8 @@ class HistoryGenerator:
 
             attempt = 1
             fail = failures.get(spec.key)
-            if fail is None and rng.random() < historic_fail_p and spec.kind != JobKind.SENSOR:
+            fail_p = historic_fail_p + (spec.flaky if scenario is None else 0.0)
+            if fail is None and rng.random() < fail_p and spec.kind != JobKind.SENSOR:
                 code, msg = rng.choice(_TRANSIENT[spec.vendor.value])
                 fail = FailAndRerun(spec.key, minutes * rng.uniform(0.2, 0.8), code, msg, None)
                 rerun_gap = rng.uniform(8, 40)
@@ -196,6 +211,8 @@ class HistoryGenerator:
             if spec.at:
                 return at_on_night(bd, spec.at)
             return (min(pred_ends) if pred_ends else night_anchor(bd)) + lag
+        if spec.start_lag and pred_ends:
+            lag = timedelta(minutes=rng.uniform(*spec.start_lag))   # e.g. MFT hand-off or machine queueing
         candidates = [p + lag for p in pred_ends]
         if spec.hidden_after:
             candidates.append(max(pred_ends) + timedelta(minutes=rng.uniform(2, 6)) if pred_ends

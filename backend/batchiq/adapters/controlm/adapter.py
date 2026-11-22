@@ -7,6 +7,7 @@ from typing import Any
 from batchiq.adapters.base import ActionCommand, SchedulerAdapter
 from batchiq.adapters.registry import register
 from batchiq.core.artifacts import file_artifact
+from batchiq.discovery.sources import SourceRef
 from batchiq.domain.models import Dependency, DependencyOrigin, Job, JobRun, RunStatus, Scheduler, Vendor
 
 _STATUS = {"Ended OK": RunStatus.SUCCEEDED, "Ended Not OK": RunStatus.FAILED,
@@ -51,7 +52,9 @@ class ControlMAdapter(SchedulerAdapter):
                     scheduled_time=time(int(ft[:2]), int(ft[2:])) if ft else None,
                     schedule=f"Daily from {ft[:2]}:{ft[2:]}" if ft else "On condition",
                     tags=[t for t in (j.get("Application"), j.get("SubApplication")) if t],
-                    produces=produces, consumes=consumes, description=j.get("Description")))
+                    produces=produces, consumes=consumes, description=j.get("Description"),
+                    alerting=any(isinstance(v, dict) and str(v.get("Type", "")).startswith("If:") for v in j.values()),
+                    attributes={"run_as": j.get("RunAs"), "site_standard": body.get("SiteStandard")}))
                 for e in j.get("eventsToAdd", {}).get("Events", []):
                     adders[e["Event"]] = jid
                 for e in j.get("eventsToWaitFor", {}).get("Events", []):
@@ -59,6 +62,10 @@ class ControlMAdapter(SchedulerAdapter):
         deps = [Dependency(id=f"{adders[ev]}->{jid}", source=adders[ev], target=jid,
                            origin=DependencyOrigin.DECLARED, cross_scheduler=False, artifact=ev)
                 for ev, jid in waiters if ev in adders]
+        by_id = {j.id: j for j in jobs}
+        for ev, jid in waiters:
+            if ev not in adders:       # no job in this Control-M adds the event: the job can never start
+                by_id[jid].unresolved_conditions.append(f"event {ev}")
         return jobs, deps
 
     def normalise_runs(self, native: dict[str, Any], jobs: dict[str, Job]) -> list[JobRun]:
@@ -73,8 +80,14 @@ class ControlMAdapter(SchedulerAdapter):
                 business_date=f"20{od[:2]}-{od[2:4]}-{od[4:]}", attempt=s["numberOfRuns"], status=status,
                 start=start, end=end, duration_s=(end - start).total_seconds() if start and end else None,
                 error_code=s["completionCode"] if status == RunStatus.FAILED else None,
-                message=s.get("outputSnippet") or None))
+                message=s.get("outputSnippet") or None, host=s.get("host") or None))
         return out
+
+    def source_refs(self, job: Job) -> list[SourceRef]:
+        cmd = (job.command or "").strip()
+        if cmd.startswith("//"):                       # a JCL job card: the member lives in the JCL library
+            return [SourceRef(f"PRD.JCLLIB({cmd[2:].split()[0]})")]
+        return [SourceRef(cmd.split()[0])] if cmd.startswith("/") else []
 
     def build_action(self, job: Job, action: str) -> ActionCommand:
         verb = {"rerun": "rerun", "hold": "hold", "release": "free", "kill": "kill",

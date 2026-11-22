@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, time
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -41,6 +42,7 @@ class ArtifactType(StrEnum):
     DATASET = "dataset"
     TABLE = "table"
     EVENT = "event"
+    QUEUE = "queue"
 
 
 class Artifact(BaseModel):
@@ -83,6 +85,14 @@ class Job(BaseModel):
     produces: list[Artifact] = Field(default_factory=list)
     consumes: list[Artifact] = Field(default_factory=list)
     description: str | None = None
+    alerting: bool | None = None                # raises an alert on failure (None = unknown)
+    unresolved_conditions: list[str] = Field(default_factory=list)  # waits on things nobody provides
+    attributes: dict[str, Any] = Field(default_factory=dict)        # vendor-specific extras
+
+    @property
+    def team(self) -> str | None:
+        """Owning team, normalised across dialects (AutoSys owners look like 'team@AE1')."""
+        return (self.owner or "").split("@")[0] or None
 
 
 class DependencyOrigin(StrEnum):
@@ -106,7 +116,7 @@ class Dependency(BaseModel):
     confidence: float = 1.0
     artifact: str | None = None
     evidence: list[Evidence] = Field(default_factory=list)
-    review_state: str = "auto"   # auto | suggested | confirmed | rejected
+    review_state: str = "auto"   # auto (declared) | suggested (in review) | confirmed | rejected
 
 
 class JobRun(BaseModel):
@@ -120,6 +130,7 @@ class JobRun(BaseModel):
     duration_s: float | None = None
     error_code: str | None = None
     message: str | None = None
+    host: str | None = None          # where it actually ran, when the scheduler reports it
 
 
 class Service(BaseModel):

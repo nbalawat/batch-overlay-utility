@@ -1,0 +1,23 @@
+{
+  "dags": [
+    {"dag_id": "reg_returns", "fileloc": "/opt/airflow/dags/reg_returns.py",
+     "schedule_interval": {"__type": "CronExpression", "value": "15 5 * * *"},
+     "timetable_description": "At 05:15", "tags": [{"name": "regulatory"}]}
+  ],
+  "tasks": {
+    "reg_returns": [
+      {"task_id": "wait_liquidity_file", "operator_name": "FileSensor", "owner": "reg-reporting",
+       "queue": "celery-reg", "downstream_task_ids": ["build_lcr_return"],
+       "rendered_fields": {"filepath": "/data/treasury/liquidity_{{ ds_nodash }}.csv"},
+       "mode": "poke", "poke_interval": 60, "timeout": 14400, "email_on_failure": true},
+      {"task_id": "build_lcr_return", "operator_name": "SnowflakeOperator", "owner": "reg-reporting",
+       "queue": "snowflake-reg", "downstream_task_ids": ["submit_return"],
+       "outlets": ["warehouse://reg/lcr_return"], "email_on_failure": true},
+      {"task_id": "submit_return", "operator_name": "PythonOperator", "owner": "reg-reporting",
+       "queue": "celery-reg", "downstream_task_ids": [], "email_on_failure": false}
+    ]
+  },
+  "datasets": [
+    {"uri": "warehouse://finance/gl_mart", "consuming_dags": [{"dag_id": "reg_returns"}]}
+  ]
+}
