@@ -12,7 +12,7 @@ import re
 from batchiq.domain.models import Artifact, ArtifactType
 
 _DATE_TOKENS = re.compile(
-    r"(%%ODATE|\{\{\s*ds_nodash\s*\}\}|\{\{\s*ds\s*\}\}|\$\$\(BUSDATE\)|\d{8})"
+    r"(%%ODATE|&ODATE\.?|\{\{\s*ds_nodash\s*\}\}|\{\{\s*ds\s*\}\}|\$\$\(BUSDATE\)|\$\{BUSDATE\}|\$BUSDATE|\d{8})"
 )
 
 
@@ -42,3 +42,9 @@ _PATH = re.compile(r"(/[\w.\-/%$(){}]+\.(?:dat|csv|ach|txt|xml))")
 
 def paths_in(text: str) -> list[str]:
     return _PATH.findall(text or "")
+
+
+def data_artifact(name: str) -> Artifact:
+    """A table referenced in code (SQL, Spark): schema.table."""
+    schema, _, table = name.partition(".")
+    return table_artifact(schema, table)

@@ -1,0 +1,22 @@
+# Who reviews links: the owning teams named in the schedulers' own owner fields, and their people.
+# At a client this comes from the IdP / CMDB (team membership) and is loaded at onboarding. Names are fictional.
+teams:
+  - {id: core-batch-ops, name: Core Banking Batch Operations, members: [{id: rkhan, name: Rahul Khan, title: Batch lead, Core Banking}]}
+  - {id: dba-mainframe, name: Mainframe DBA, members: [{id: lbrooks, name: Laura Brooks, title: Mainframe DBA}]}
+  - {id: payments-ops, name: Payments Operations Technology, members: [{id: mtorres, name: Marco Torres, title: Payments batch owner}]}
+  - {id: cards-batch, name: Cards Platform, members: [{id: snair, name: Sunita Nair, title: Cards batch lead}]}
+  - {id: loans-batch, name: Lending Platform, members: [{id: jokafor, name: James Okafor, title: Lending batch lead}]}
+  - {id: treasury-tech, name: Treasury Technology, members: [{id: ewalsh, name: Emma Walsh, title: Treasury tech lead}]}
+  - {id: aml-tech, name: Financial Crime Technology, members: [{id: dchen, name: David Chen, title: AML platform owner}]}
+  - {id: mis-reporting, name: MIS Reporting, members: [{id: agarcia, name: Ana Garcia, title: MIS reporting lead}]}
+  - {id: data-eng-finance, name: Finance Data Engineering, members: [{id: praman, name: Priya Raman, title: Finance data engineering lead}]}
+  - {id: reg-reporting-tech, name: Regulatory Reporting Technology, members: [{id: tmorgan, name: Tom Morgan, title: Reg reporting tech lead}]}
+  - {id: fraud-analytics, name: Fraud Analytics, members: [{id: kimura, name: Kenji Imura, title: Fraud ML engineering lead}]}
+  - {id: martech, name: Marketing Technology, members: [{id: lsilva, name: Lucia Silva, title: Martech engineering lead}]}
+  - {id: data-governance, name: Data Governance, members: [{id: bfoster, name: Ben Foster, title: Data quality lead}]}
+  - {id: customer-comms-eng, name: Customer Communications Engineering, members: [{id: hpatel, name: Hannah Patel, title: Customer comms engineering lead}]}
+  - {id: customer-data-eng, name: Customer Data Engineering, members: [{id: oadeyemi, name: Olu Adeyemi, title: C360 product engineer}]}
+  - {id: crm-platform, name: CRM Platform, members: [{id: rlee, name: Rachel Lee, title: CRM integration lead}]}
+  - {id: hr-tech, name: HR Technology, members: [{id: nwhite, name: Nora White, title: HR systems lead}]}
+  - {id: batch-coe, name: Batch Centre of Excellence, governance: true,
+     members: [{id: coe-lead, name: Sam Rivera, title: Batch CoE lead (governance, can reopen decisions)}]}

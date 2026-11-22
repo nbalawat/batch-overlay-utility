@@ -9,6 +9,7 @@ from batchiq.adapters.base import ActionCommand, SchedulerAdapter
 from batchiq.adapters.registry import register
 from batchiq.config import settings
 from batchiq.core.artifacts import dataset_artifact, file_artifact
+from batchiq.discovery.sources import SourceRef
 from batchiq.domain.models import Dependency, DependencyOrigin, Job, JobKind, JobRun, RunStatus, Scheduler, Vendor
 
 _STATE = {"success": RunStatus.SUCCEEDED, "failed": RunStatus.FAILED, "running": RunStatus.RUNNING,
@@ -66,7 +67,9 @@ class AirflowAdapter(SchedulerAdapter):
                     host=t["queue"], command=f"{t['operator_name']} in {meta['fileloc']}",
                     schedule=meta["timetable_description"], scheduled_time=at,
                     tags=[x["name"] for x in meta["tags"]],
-                    produces=[dataset_artifact(u) for u in t.get("outlets", [])], consumes=consumes))
+                    produces=[dataset_artifact(u) for u in t.get("outlets", [])], consumes=consumes,
+                    alerting=t.get("email_on_failure"),
+                    attributes={k: t[k] for k in ("mode", "poke_interval", "timeout", "retries", "pool") if k in t}))
                 for d in t["downstream_task_ids"]:
                     src, tgt = self._jid(dag_id, t["task_id"]), self._jid(dag_id, d)
                     deps.append(Dependency(id=f"{src}->{tgt}", source=src, target=tgt,
@@ -84,8 +87,12 @@ class AirflowAdapter(SchedulerAdapter):
                 id=f"{ti['dag_id']}.{ti['task_id']}@{ti['dag_run_id']}#{ti['try_number']}",
                 job_id=self._jid(ti["dag_id"], ti["task_id"]), business_date=ti["execution_date"][:10],
                 attempt=ti["try_number"], status=status, start=start, end=end, duration_s=ti["duration"],
-                error_code=code or None, message=msg or None))
+                error_code=code or None, message=msg or None, host=ti.get("hostname")))
         return out
+
+    def source_refs(self, job: Job) -> list[SourceRef]:
+        fileloc = (job.command or "").rsplit(" in ", 1)[-1]   # "<Operator> in <fileloc>"
+        return [SourceRef(fileloc, section=job.name)] if fileloc.endswith(".py") else []
 
     def build_action(self, job: Job, action: str) -> ActionCommand:
         dag, task = job.container, job.name

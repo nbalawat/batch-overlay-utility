@@ -9,9 +9,11 @@ from batchiq.domain.models import Dependency
 
 class LineageGraph:
     def __init__(self, deps: list[Dependency], min_confidence: float | None = None) -> None:
+        # Facts (declared, or definition matches inside one scheduler) and links people approved. Links still in
+        # review are kept out on purpose: they are shown, and flagged when they matter, but never assumed.
         threshold = settings.correlation_min_confidence if min_confidence is None else min_confidence
-        self.edges = [d for d in deps if d.review_state != "rejected"
-                      and (d.confidence >= threshold or d.review_state == "confirmed")]
+        self.edges = [d for d in deps if d.review_state == "confirmed"
+                      or (d.review_state == "auto" and d.confidence >= threshold)]
         self.up: dict[str, list[Dependency]] = defaultdict(list)
         self.down: dict[str, list[Dependency]] = defaultdict(list)
         for d in self.edges:

@@ -8,6 +8,7 @@ from typing import Any
 from batchiq.adapters.base import ActionCommand, SchedulerAdapter
 from batchiq.adapters.registry import register
 from batchiq.core.artifacts import file_artifact
+from batchiq.discovery.sources import SourceRef
 from batchiq.domain.models import Dependency, DependencyOrigin, Job, JobRun, RunStatus, Scheduler, Vendor
 
 _STATUS = {"SUCCESS": RunStatus.SUCCEEDED, "FAILURE": RunStatus.FAILED, "RUNNING": RunStatus.RUNNING,
@@ -63,11 +64,19 @@ class AutoSysAdapter(SchedulerAdapter):
                 scheduled_time=time.fromisoformat(st) if st else None,
                 schedule=f"Daily at {st}" if st else "On condition",
                 tags=[t for t in (j.get("application"), j.get("box_name")) if t],
-                produces=produces, consumes=consumes))
+                produces=produces, consumes=consumes, alerting=j.get("alarm_if_fail", "1") == "1",
+                attributes={k: j[k] for k in ("permission", "max_run_alarm", "n_retrys") if k in j}))
             for up in _COND.findall(j.get("condition", "")):
                 deps.append(Dependency(id=f"{self._jid(up)}->{jid}", source=self._jid(up), target=jid,
                                        origin=DependencyOrigin.DECLARED, cross_scheduler=False,
                                        artifact=f"s({up})"))
+        names = {j.name for j in jobs}
+        by_id = {j.id: j for j in jobs}
+        for d in deps:
+            up = d.source.split("::", 1)[1]
+            if up not in names:        # condition on a job that is not defined in this instance
+                by_id[d.target].unresolved_conditions.append(f"s({up})")
+        deps = [d for d in deps if d.source.split("::", 1)[1] in names]
         return jobs, deps
 
     def normalise_runs(self, native: dict[str, Any], jobs: dict[str, Job]) -> list[JobRun]:
@@ -84,8 +93,12 @@ class AutoSysAdapter(SchedulerAdapter):
                 id=f"{r['jobName']}#{r['runNum']}/{r['ntry']}", job_id=self._jid(r["jobName"]),
                 business_date=bd, attempt=r["ntry"], status=_STATUS.get(r["status"], RunStatus.WAITING),
                 start=start, end=end, duration_s=(end - start).total_seconds() if start and end else None,
-                error_code=code, message=msg))
+                error_code=code, message=msg, host=r.get("machine")))
         return out
+
+    def source_refs(self, job: Job) -> list[SourceRef]:
+        script = (job.command or "").split()[:1]
+        return [SourceRef(script[0])] if script and script[0].startswith("/") else []
 
     def build_action(self, job: Job, action: str) -> ActionCommand:
         event = {"rerun": "FORCE_STARTJOB", "hold": "JOB_ON_HOLD", "release": "JOB_OFF_HOLD",

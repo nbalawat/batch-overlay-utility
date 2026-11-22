@@ -50,6 +50,8 @@ class AirflowSimulator(SimulatedClient):
                     "queue": s.host, "downstream_task_ids": [o.name for o in specs if s.name in o.after],
                     "rendered_fields": rendered,
                     "outlets": [a.split(":", 1)[1] for a in s.produces if a.startswith("dataset:")],
+                    **({"mode": "poke", "poke_interval": 60, "timeout": 43200} if s.kind == JobKind.SENSOR else {}),
+                    "email_on_failure": s.alarm, "retries": 1,
                 })
                 for a in s.produces:
                     if a.startswith("dataset:"):

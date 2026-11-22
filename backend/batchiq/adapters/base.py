@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
+from batchiq.discovery.sources import SourceRef
 from batchiq.domain.models import Dependency, Job, JobRun, Scheduler
 
 
@@ -84,6 +85,10 @@ class SchedulerAdapter(ABC):
         cmd = self.build_action(job, action)
         receipt = self.client.submit(cmd.api_call)
         return {"command": cmd.native_command, "api_call": cmd.api_call, "receipt": receipt}
+
+    def source_refs(self, job: Job) -> list[SourceRef]:
+        """Where this vendor keeps the code a job runs. Default: unknown."""
+        return []
 
     def native_sample(self) -> dict[str, Any]:
         """Raw payloads, for showing how normalisation works in the demo."""

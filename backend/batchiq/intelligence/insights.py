@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from batchiq.domain.models import JobKind, RunStatus
+from batchiq.intelligence.state import scheduled_dt
 
 if TYPE_CHECKING:
     from batchiq.service import Analysis
@@ -299,21 +300,45 @@ class InsightEngine:
         return out
 
     def _correlations(self) -> list[Insight]:
+        """Links still in review that already matter tonight, plus one pointer to the review queue."""
         out = []
         jobs = self.a.estate.jobs()
-        for d in self.a.estate.dependencies().values():
-            if d.review_state != "suggested":
-                continue
+        pending = [d for d in self.a.estate.dependencies().values() if d.review_state == "suggested"]
+        for d in pending:
             s, t = jobs[d.source], jobs[d.target]
+            sd = scheduled_dt(t, self.a.estate.business_date)
+            fc = self.a.job_fc.get(d.source)
+            if d.confidence < 0.6 or sd is None or fc is None or self.a.states[d.source].done:
+                continue
+            if fc.p50_end <= sd or self.a.estate.now > sd:
+                continue
+            procs = self.a.mapper.processes_for(d.target)
             out.append(Insight(
-                id=f"ins-corr-{d.id}", type="correlation", severity="info",
-                title=f"Hidden dependency: {t.name} ({VENDOR_LABEL[t.vendor.value]}) depends on {s.name} ({VENDOR_LABEL[s.vendor.value]})",
-                summary=("No scheduler declares this link. It was inferred with "
-                         f"{int(d.confidence * 100)}% confidence. Confirm it to make it part of the lineage."),
-                detected_at=self.a.estate.now, job_ids=[d.source, d.target],
-                process_ids=self.a.mapper.processes_for(d.target), scheduler_ids=[s.scheduler_id, t.scheduler_id],
-                evidence=[e.detail for e in d.evidence],
-                recommendations=[{"id": f"rec-confirm-{d.id}", "title": "Confirm the dependency",
-                                  "rationale": "Confirmed links feed impact analysis and SLA forecasts.",
-                                  "action": {"dependency_id": d.id, "action": "confirm"}}]))
+                id=f"ins-stale-{d.id}", type="stale_data", severity="high",
+                title=f"{t.name} will likely read stale data tonight",
+                summary=(f"{t.name} ({VENDOR_LABEL[t.vendor.value]}) starts at {sd:%H:%M} by its own schedule, but its "
+                         f"code reads the output of {s.name} ({VENDOR_LABEL[s.vendor.value]}), now projected for "
+                         f"{fc.p50_end:%H:%M} (P90 {fc.p90_end:%H:%M}). No scheduler links the two, so nothing will "
+                         f"hold it back. The link is {int(d.confidence * 100)}% likely and is in review."),
+                detected_at=self.a.estate.now, job_ids=[d.source, d.target], process_ids=procs,
+                scheduler_ids=[s.scheduler_id, t.scheduler_id], evidence=[e.detail for e in d.evidence],
+                impact=self.impact_of(d.target),
+                recommendations=[
+                    {"id": f"rec-hold-{d.target}", "title": f"Hold {t.name} until {s.name} finishes",
+                     "rationale": "A one-off hold tonight avoids sending stale figures; release it when the input lands.",
+                     "action": {"job_id": d.target, "action": "hold"}},
+                    {"id": f"rec-review-{d.id}", "title": "Review the link",
+                     "rationale": "Once approved, the overlay forecasts and alerts on this dependency every night.",
+                     "action": {"link_id": d.id, "action": "review"}}]))
+        n = sum(1 for d in pending if d.confidence >= 0.6)
+        if n:
+            out.append(Insight(
+                id="ins-link-queue", type="correlation", severity="info",
+                title=f"{n} recommended links are waiting for review",
+                summary=("The overlay found these from definitions, job code and run history. They only feed "
+                         "forecasts and impact analysis once their owners approve them."),
+                detected_at=self.a.estate.now, evidence=[f"{jobs[d.source].name} → {jobs[d.target].name} "
+                                                         f"({int(d.confidence * 100)}%)" for d in pending][:8],
+                recommendations=[{"id": "rec-open-queue", "title": "Open the review queue", "rationale": "",
+                                  "action": {"link_id": "", "action": "review"}}]))
         return out
