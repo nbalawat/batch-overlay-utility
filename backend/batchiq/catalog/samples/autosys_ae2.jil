@@ -1,0 +1,40 @@
+/* AutoSys AE2 (wealth management), exported with: autorep -J ALL -q */
+insert_job: WLT_EOD_BOX   job_type: BOX
+owner: wealth-ops@AE2
+start_times: "01:30"
+
+insert_job: WLT_POSITIONS_LOAD   job_type: CMD
+box_name: WLT_EOD_BOX
+command: /apps/wealth/bin/load_positions.sh --in /xfer/core/balances_$$(BUSDATE).dat --out /data/wealth/positions_$$(BUSDATE).dat
+machine: wlt-lnx-01
+owner: wealth-ops@AE2
+application: WEALTH
+start_times: "01:30"
+alarm_if_fail: 1
+
+insert_job: WLT_FEES_CALC   job_type: CMD
+box_name: WLT_EOD_BOX
+command: /apps/wealth/bin/calc_fees.sh --in /data/wealth/positions_$$(BUSDATE).dat --out /data/wealth/fees_$$(BUSDATE).dat
+machine: wlt-lnx-01
+owner: wealth-ops@AE2
+application: WEALTH
+condition: s(WLT_POSITIONS_LOAD)
+alarm_if_fail: 1
+
+insert_job: WLT_CLIENT_STATEMENTS   job_type: CMD
+box_name: WLT_EOD_BOX
+command: /apps/wealth/bin/statements.sh --in /data/wealth/fees_$$(BUSDATE).dat --out /out/wealth/statements_$$(BUSDATE).pdf
+machine: wlt-lnx-02
+owner: wealth-ops@AE2
+application: WEALTH
+condition: s(WLT_FEES_CALC) & s(WLT_PRICING_SNAPSHOT)
+alarm_if_fail: 0
+
+insert_job: WLT_GL_POSTING   job_type: CMD
+box_name: WLT_EOD_BOX
+command: /apps/wealth/bin/post_gl.sh --in /data/wealth/fees_$$(BUSDATE).dat --out /xfer/gl/wealth_gl_$$(BUSDATE).dat
+machine: wlt-lnx-01
+owner: wealth-ops@AE2
+application: WEALTH
+condition: s(WLT_FEES_CALC)
+alarm_if_fail: 1

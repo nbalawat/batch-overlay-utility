@@ -42,7 +42,6 @@ class ActionRequest(BaseModel):
     action: str
     job_id: str | None = None
     process_id: str | None = None
-    dependency_id: str | None = None
     actor: str = "demo.operator"
     note: str = ""
 
@@ -57,10 +56,6 @@ def act(req: ActionRequest, svc: EstateService = Depends(get_service)):
         return svc.execute_action(req.job_id, req.action, req.actor, req.note)
     if req.action == "notify" and req.process_id:
         return svc.notify(req.process_id, req.actor)
-    if req.action in ("confirm", "reject") and req.dependency_id:
-        if req.dependency_id not in svc.a.estate.dependencies():
-            raise HTTPException(404, "Unknown dependency")
-        return svc.review_dependency(req.dependency_id, req.action, req.actor)
     raise HTTPException(400, "Unsupported action or missing target")
 
 

@@ -141,6 +141,7 @@ RULES: tuple[MiningRule, ...] = (
 
 _SFTP_SESSION = re.compile(r"sftp\b[^\n]*?@(?P<host>[\w.\-]+)")
 _SFTP_CMD = re.compile(r"^\s*(?P<op>put|get)\s+(?P<a>\S+)\s+(?P<b>\S+)", re.M)
+_SECRET_VALUE = re.compile(r'(=\s*)"[^"]*"')
 _FOLLOW = re.compile(r"\"notebookPath\":\s*\"([^\"]+)\"")
 
 
@@ -227,8 +228,11 @@ class SourceMiner:
                 if built is None:
                     continue
                 rel, otype, key, label, detail = built
+                snip = snippet(m.start())
+                if otype == "secret":            # never carry the credential itself beyond the miner
+                    snip = _SECRET_VALUE.sub(r'\1"********"', snip)
                 out.append(MinedFact(job.id, rel, otype, key, label, t.path, line_of(m.start()), rule.id,
-                                     snippet(m.start()), detail))
+                                     snip, detail))
         # sftp sessions span lines: the host is on the session line, the file on the put/get line
         for s in _SFTP_SESSION.finditer(t.text):
             window = t.text[s.end(): s.end() + 400]

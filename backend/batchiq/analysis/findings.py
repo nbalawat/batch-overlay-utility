@@ -43,7 +43,6 @@ CATEGORY_TITLES = {
     "queueing-delay": "Starts late after its inputs are ready",
     "failure-hotspot": "Repeated failures",
     "critical-path-leverage": "Where minutes saved move the SLA",
-    "schedule-slack": "Scheduled earlier than it can ever start",
     "stale-read": "Ran before the data it reads was ready",
     "host-load": "Host concurrency peak",
 }

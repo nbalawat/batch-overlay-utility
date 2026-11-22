@@ -1,0 +1,33 @@
+{
+  "MORTGAGE_SERVICING": {
+    "Type": "Folder",
+    "ControlmServer": "CTMMTG",
+    "SiteStandard": "BANK_STD",
+    "MTG_ESCROW_ANALYSIS": {
+      "Type": "Job:Command",
+      "Command": "/apps/mtg/bin/escrow.sh",
+      "Host": "mtg-lnx-01",
+      "RunAs": "mtgbatch",
+      "Application": "MORTGAGE",
+      "SubApplication": "SERVICING",
+      "CreatedBy": "mortgage-ops",
+      "Description": "Escrow analysis using the loan delinquency file from core",
+      "Variables": [{"IN_DELINQ": "/xfer/loans/delinquency_%%ODATE.dat"}, {"OUT_ESCROW": "/xfer/mtg/escrow_%%ODATE.dat"}],
+      "When": {"FromTime": "0130"},
+      "eventsToAdd": {"Type": "AddEvents", "Events": [{"Event": "MTG_ESCROW_OK"}]},
+      "IfBase:Folder:CompletionStatus_0": {"Type": "If:CompletionStatus", "CompletionStatus": "NOTOK",
+        "Mail_0": {"Type": "Action:Mail", "To": "mtg-oncall@bank.example", "Subject": "Escrow failed"}}
+    },
+    "MTG_INVESTOR_REPORT": {
+      "Type": "Job:Command",
+      "Command": "/apps/mtg/bin/investor_report.sh",
+      "Host": "mtg-lnx-01",
+      "RunAs": "mtgbatch",
+      "Application": "MORTGAGE",
+      "CreatedBy": "mortgage-ops",
+      "Description": "Investor remittance report",
+      "Variables": [{"IN_ESCROW": "/xfer/mtg/escrow_%%ODATE.dat"}, {"OUT_REPORT": "/xfer/mtg/investor_%%ODATE.csv"}],
+      "eventsToWaitFor": {"Type": "WaitForEvents", "Events": [{"Event": "MTG_ESCROW_OK"}, {"Event": "MTG_RATES_OK"}]}
+    }
+  }
+}

@@ -69,8 +69,10 @@ def missing_dependencies(x: AnalysisInputs) -> Iterable[Finding]:
             f"{_name(x, d.target)} starts at {tgt.scheduled_time:%H:%M} on its own clock. Its code reads {what}, "
             f"which {_name(x, d.source)} produces. In {races} of {n} nights it started before that was ready."
             + (f" The time-based start was introduced by {changed}." if changed else ""),
-            "Make the dependency explicit: a condition or file/dataset trigger in the scheduler, or approve the "
-            "link so the overlay forecasts and alerts on it.",
+            ("The owners confirmed the link, so the overlay now forecasts and alerts on it. The scheduler still "
+             "does not enforce it: add a condition or a file/dataset trigger." if state == "approved" else
+             "Make the dependency explicit: a condition or file/dataset trigger in the scheduler, or approve the "
+             "link so the overlay forecasts and alerts on it."),
             scope, [d.source, d.target], x.mapper.processes_for(d.target),
             evidence=[e.detail for e in d.evidence if e.kind != "runtime-order"],
             metrics={"race_nights": races, "nights": n, "race_dates": dates[-5:], "review_state": state},

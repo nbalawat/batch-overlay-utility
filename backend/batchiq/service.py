@@ -23,32 +23,32 @@ from batchiq.adapters.airflow.simulator import AirflowSimulator
 from batchiq.adapters.autosys.simulator import AutoSysSimulator
 from batchiq.adapters.base import SchedulerAdapter
 from batchiq.adapters.controlm.simulator import ControlMSimulator
+from batchiq.analysis.context import AnalysisInputs
+from batchiq.analysis.findings import Finding
+from batchiq.analysis.runtime import run_runtime
+from batchiq.analysis.static import run_static
 from batchiq.config import settings
 from batchiq.core.business import BusinessMapper, load_catalogue
 from batchiq.core.graph import LineageGraph
 from batchiq.core.stats import JobBaseline, compute_baselines
 from batchiq.core.store import InMemoryEstate
+from batchiq.discovery.miner import MinedFact, SourceMiner
 from batchiq.domain.models import Incident, RunStatus, Service, Vendor
 from batchiq.intelligence.forecast import Forecaster, JobForecast, ProcessForecast
 from batchiq.intelligence.insights import Insight, InsightEngine
 from batchiq.intelligence.knowledge import TfidfKnowledgeBase
 from batchiq.intelligence.state import JobState, compute_states
-from batchiq.simulation.estate import INCIDENT_HISTORY, JOBS, SCHEDULERS, jobs_for
-from batchiq.simulation.review_history import REVIEW_HISTORY
-from batchiq.simulation.sources import SimulatedSourceRepository
-from batchiq.analysis.context import AnalysisInputs
-from batchiq.analysis.findings import Finding
-from batchiq.analysis.runtime import run_runtime
-from batchiq.analysis.static import run_static
-from batchiq.discovery.miner import MinedFact, SourceMiner
 from batchiq.knowledge.builder import KGInputs, KnowledgeGraphBuilder
 from batchiq.knowledge.graph import KnowledgeGraph
 from batchiq.linking.evidence import LinkContext
 from batchiq.linking.recommender import Candidate, LinkRecommender
 from batchiq.linking.review import Directory, ReviewStore
-from batchiq.views.changelog import build_changelog
+from batchiq.simulation.estate import INCIDENT_HISTORY, JOBS, SCHEDULERS, jobs_for
 from batchiq.simulation.history import HistoryGenerator
+from batchiq.simulation.review_history import REVIEW_HISTORY
 from batchiq.simulation.scenarios import SCENARIOS
+from batchiq.simulation.sources import SimulatedSourceRepository
+from batchiq.views.changelog import build_changelog
 
 _SIMULATORS = {Vendor.CONTROL_M: ControlMSimulator, Vendor.AIRFLOW: AirflowSimulator,
                Vendor.AUTOSYS: AutoSysSimulator, Vendor.ADF: ADFSimulator}
@@ -69,6 +69,7 @@ class Analysis:
     engine: InsightEngine
     kg: KnowledgeGraph | None = None
     findings: list[Finding] = field(default_factory=list)
+    inputs: AnalysisInputs | None = None
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -199,6 +200,7 @@ class EstateService:
         x = AnalysisInputs(estate, graph, a.kg, mapper, baselines, proc_fc, self.mined, link_states, self.windows,
                            changed)
         a.findings = run_static(x) + run_runtime(x)
+        a.inputs = x
         self.a = a
 
     def reanalyse(self) -> None:
@@ -417,16 +419,6 @@ class EstateService:
                  "receipt": {"accepted": True, "simulated": True, "channel": "email/teams (simulated)"}}
         self.a.estate.audit.append(entry)
         return entry
-
-    def review_dependency(self, dep_id: str, decision: str, actor: str) -> dict[str, Any]:
-        with self._lock:
-            d = self.a.estate.dependencies()[dep_id]
-            d.review_state = "confirmed" if decision == "confirm" else "rejected"
-            self.a.estate.audit.append({"at": _iso(self.a.estate.now), "actor": actor, "action": decision,
-                                        "dependency_id": dep_id, "command": f"lineage {decision}",
-                                        "receipt": {"accepted": True}})
-            self.reanalyse()
-            return d.model_dump(mode="json")
 
     def audit(self) -> list[dict[str, Any]]:
         return list(reversed(self.a.estate.audit))
