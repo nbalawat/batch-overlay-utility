@@ -41,7 +41,22 @@ cd backend && pip install -e ".[dev]" && uvicorn batchiq.api.app:app --reload --
 cd frontend && npm install && npm run dev        # http://localhost:5173
 ```
 
-Tests: `cd backend && pytest -q` (end-to-end over the simulated estate, no network needed).
+## Testing (in the cloud, not on a laptop)
+
+Every push and pull request runs the whole suite on GitHub's runners (`.github/workflows/ci.yml`), so nothing
+needs to run on a local machine:
+
+| Job | What it proves |
+|---|---|
+| Backend tests | ruff, then the pipeline and API tests in parallel (pytest-xdist), offline assistant, pinned date |
+| Frontend | type check and production build |
+| End-to-end | `docker compose up` of the real images, then Playwright in Chromium: every page renders with no console errors or 5xx, and the demo flows work |
+| Image | the API image starts as the non-root user Kubernetes uses, and answers |
+| Kubernetes | the base and the AWS, Azure and GCP overlays render, and the base deploys and answers on a kind cluster |
+| Compose | the compose file is valid in every profile |
+
+`make ci-status` lists the runs for your branch. To run the same things somewhere with Docker: `make test`,
+`make up && make e2e`.
 
 ## Demo scenarios
 

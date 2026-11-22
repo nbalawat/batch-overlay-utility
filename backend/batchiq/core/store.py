@@ -12,8 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
-from batchiq.domain.models import (BusinessProcess, Dependency, Incident, Job, JobRun, Scheduler,
-                                   Service)
+from batchiq.domain.models import BusinessProcess, Dependency, Incident, Job, JobRun, Scheduler, Service
 
 
 class EstateRepository(Protocol):

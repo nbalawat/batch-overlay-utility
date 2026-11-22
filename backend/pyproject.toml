@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.4"]
+dev = ["pytest>=8", "pytest-xdist>=3.6", "ruff>=0.4"]
 
 [tool.setuptools.packages.find]
 include = ["batchiq*"]
@@ -31,3 +31,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["B008", "E501", "SIM102", "SIM108"]   # B008: FastAPI's Depends() in defaults is the documented pattern

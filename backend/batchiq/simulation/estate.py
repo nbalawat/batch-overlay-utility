@@ -12,7 +12,7 @@ infer it from run history and artifact names.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import time
 
 from batchiq.domain.models import JobKind, Vendor

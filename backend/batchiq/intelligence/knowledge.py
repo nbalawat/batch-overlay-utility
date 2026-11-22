@@ -58,6 +58,6 @@ class TfidfKnowledgeBase:
 
     def search(self, query: str, k: int = 3) -> list[tuple[Incident, float]]:
         q = self._vec(_tokens(query))
-        scored = [(d, sum(q.get(t, 0) * w for t, w in v.items())) for d, v in zip(self.docs, self.vecs)]
+        scored = [(d, sum(q.get(t, 0) * w for t, w in v.items())) for d, v in zip(self.docs, self.vecs, strict=True)]
         scored = [s for s in scored if s[1] > 0.05]
         return sorted(scored, key=lambda s: -s[1])[:k]

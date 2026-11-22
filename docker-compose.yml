@@ -5,6 +5,7 @@ services:
     environment:
       BATCHIQ_SCENARIO: ${BATCHIQ_SCENARIO:-gl-extract-abend}
       BATCHIQ_TIMEZONE: ${BATCHIQ_TIMEZONE:-America/New_York}
+      BATCHIQ_TODAY: ${BATCHIQ_TODAY:-}             # blank = real date; CI pins it
       LLM_PROVIDER: ${LLM_PROVIDER:-auto}          # auto | anthropic | openai_compatible | offline
       LLM_MODEL: ${LLM_MODEL:-claude-opus-5-5}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

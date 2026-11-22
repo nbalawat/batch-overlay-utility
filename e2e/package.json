@@ -1,0 +1,11 @@
+{
+  "name": "batchiq-e2e",
+  "private": true,
+  "description": "Browser tests against a running stack (docker compose, kind, or the dev servers)",
+  "scripts": {
+    "test": "playwright test --trace off"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}
