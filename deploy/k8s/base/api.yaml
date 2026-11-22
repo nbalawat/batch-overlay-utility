@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: batchiq-api
+  labels: {app: batchiq-api}
+spec:
+  replicas: 1   # state is in-memory in the prototype; scale out once the Postgres repository is in place
+  selector: {matchLabels: {app: batchiq-api}}
+  template:
+    metadata: {labels: {app: batchiq-api}}
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 10001}
+      containers:
+        - name: api
+          image: batchiq-api
+          ports: [{containerPort: 8000}]
+          envFrom:
+            - configMapRef: {name: batchiq-config}
+            - secretRef: {name: batchiq-llm}
+          readinessProbe: {httpGet: {path: /readyz, port: 8000}, initialDelaySeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: 8000}, periodSeconds: 20}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector: {app: batchiq-api}
+  ports: [{port: 8000, targetPort: 8000}]

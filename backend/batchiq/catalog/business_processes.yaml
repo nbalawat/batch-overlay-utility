@@ -1,0 +1,76 @@
+# Business process catalogue: the client-specific layer captured during onboarding
+# (Step 0 of the design flow). Anchor jobs mark when a process is "done". Every
+# upstream job, in any scheduler, is pulled in automatically through the
+# correlated lineage graph, so this file never has to list jobs per scheduler.
+
+services:
+  - {id: svc-core-banking, name: Core Banking Ledger, owner: Core Banking Platform, tier: 1}
+  - {id: svc-payments-hub, name: Payments Hub (ACH / Fedwire), owner: Payments Technology, tier: 1}
+  - {id: svc-treasury, name: Treasury & ALM, owner: Treasury Technology, tier: 1}
+  - {id: svc-finance-dp, name: Finance Data Platform, owner: Enterprise Data, tier: 2}
+  - {id: svc-reg-reporting, name: Regulatory Reporting, owner: Finance Change, tier: 1}
+  - {id: svc-fraud, name: Fraud Detection, owner: Financial Crime Analytics, tier: 1}
+  - {id: svc-customer-comms, name: Customer Communications, owner: Customer Channels, tier: 2}
+  - {id: svc-c360, name: Customer 360, owner: Customer Data, tier: 3}
+
+processes:
+  - id: bp-payments-settlement
+    name: Payments settlement (ACH)
+    description: Net settlement of the day's payments and transmission of the NACHA file to the Fed.
+    owner: Head of Payments Operations
+    criticality: tier-1
+    sla_deadline: "03:30"
+    sla_description: NACHA file must reach the Federal Reserve before the 03:30 ET window closes.
+    services: [svc-core-banking, svc-payments-hub]
+    anchor_jobs: ["autosys-ae1::PAY_NACHA_TRANSMIT"]
+
+  - id: bp-gl-close
+    name: Daily general ledger close
+    description: Core banking GL extract loaded, transformed and published to the finance mart.
+    owner: Financial Controller
+    criticality: tier-1
+    sla_deadline: "05:45"
+    sla_description: GL mart available for the finance team's 06:00 close checks.
+    services: [svc-core-banking, svc-finance-dp]
+    anchor_jobs: ["airflow-dp::gl_ingest.publish_gl_mart"]
+
+  - id: bp-reg-liquidity
+    name: Regulatory liquidity reporting (LCR / FR 2052a)
+    description: Daily liquidity coverage and FR 2052a submission to the regulator portal.
+    owner: Head of Regulatory Reporting
+    criticality: tier-1
+    regulatory: true
+    sla_deadline: "07:00"
+    sla_description: Submission due by 07:00 ET. A late filing is a reportable breach.
+    services: [svc-core-banking, svc-treasury, svc-finance-dp, svc-reg-reporting]
+    anchor_jobs: ["airflow-dp::regulatory_reporting.submit_regulator_portal"]
+
+  - id: bp-fraud-scoring
+    name: Fraud risk scoring
+    description: Overnight feature build and model scoring that powers next-day fraud rules.
+    owner: Head of Fraud Analytics
+    criticality: tier-1
+    sla_deadline: "04:30"
+    sla_description: Fresh scores are needed before card authorisation peaks from 05:00.
+    services: [svc-core-banking, svc-fraud]
+    anchor_jobs: ["airflow-dp::fraud_features.publish_scores"]
+
+  - id: bp-customer-statements
+    name: Customer statements delivery
+    description: Statement extract, rendering and hand-off to the print and e-delivery vendor.
+    owner: Head of Customer Communications
+    criticality: tier-2
+    sla_deadline: "06:30"
+    sla_description: Print vendor cut-off is 06:30. Missing it delays mail-out by a day.
+    services: [svc-core-banking, svc-customer-comms]
+    anchor_jobs: ["adf-prd::pl_customer_statements/deliver_to_print_vendor"]
+
+  - id: bp-customer-360
+    name: Customer 360 refresh
+    description: Merges fraud scores and customer data into the C360 profile used by branch and digital.
+    owner: Head of Customer Data
+    criticality: tier-3
+    sla_deadline: "06:00"
+    sla_description: Branch and digital channels open at 07:00 with refreshed profiles.
+    services: [svc-fraud, svc-c360]
+    anchor_jobs: ["adf-prd::pl_customer360_refresh/c360_publish"]

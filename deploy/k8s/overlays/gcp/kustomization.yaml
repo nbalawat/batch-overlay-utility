@@ -1,0 +1,10 @@
+# GKE with the built-in GCE ingress (internal load balancer)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [../../base]
+patches:
+  - target: {kind: Ingress, name: batchiq}
+    patch: |-
+      - op: replace
+        path: /spec/ingressClassName
+        value: gce-internal

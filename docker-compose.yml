@@ -1,0 +1,28 @@
+# Local demo: docker compose up --build, then open http://localhost:8080
+services:
+  api:
+    build: ./backend
+    environment:
+      BATCHIQ_SCENARIO: ${BATCHIQ_SCENARIO:-gl-extract-abend}
+      BATCHIQ_TIMEZONE: ${BATCHIQ_TIMEZONE:-America/New_York}
+      LLM_PROVIDER: ${LLM_PROVIDER:-auto}          # auto | anthropic | openai_compatible | offline
+      LLM_MODEL: ${LLM_MODEL:-claude-opus-5-5}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://ollama:11434/v1}
+    ports: ["8000:8000"]
+  ui:
+    build: ./frontend
+    environment:
+      API_UPSTREAM: http://api:8000
+    ports: ["8080:8080"]
+    depends_on: [api]
+
+  # Optional fully open-source LLM: docker compose --profile local-llm up
+  # then set LLM_PROVIDER=openai_compatible and LLM_MODEL=<a model you pulled, e.g. qwen2.5:14b>
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["local-llm"]
+    volumes: ["ollama:/root/.ollama"]
+    ports: ["11434:11434"]
+volumes:
+  ollama: {}

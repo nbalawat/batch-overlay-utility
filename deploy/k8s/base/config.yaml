@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: batchiq-config
+data:
+  BATCHIQ_SCENARIO: gl-extract-abend
+  BATCHIQ_TIMEZONE: America/New_York
+  LLM_PROVIDER: auto
+  LLM_MODEL: claude-opus-5-5
+---
+# Populate from your secret manager (External Secrets Operator, Sealed Secrets, CSI driver...).
+# Leaving the key empty runs the assistant in offline mode.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: batchiq-llm
+type: Opaque
+stringData:
+  ANTHROPIC_API_KEY: ""

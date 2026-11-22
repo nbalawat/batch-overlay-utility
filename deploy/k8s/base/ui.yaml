@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: batchiq-ui
+  labels: {app: batchiq-ui}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: batchiq-ui}}
+  template:
+    metadata: {labels: {app: batchiq-ui}}
+    spec:
+      securityContext: {runAsNonRoot: true}
+      containers:
+        - name: ui
+          image: batchiq-ui
+          ports: [{containerPort: 8080}]
+          env: [{name: API_UPSTREAM, value: "http://api:8000"}]
+          readinessProbe: {httpGet: {path: /healthz, port: 8080}}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+spec:
+  selector: {app: batchiq-ui}
+  ports: [{port: 80, targetPort: 8080}]

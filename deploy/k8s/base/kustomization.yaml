@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: batchiq
+resources:
+  - namespace.yaml
+  - config.yaml
+  - api.yaml
+  - ui.yaml
+  - ingress.yaml
+images:
+  - name: batchiq-api
+    newName: ghcr.io/your-org/batchiq-api
+    newTag: "0.1.0"
+  - name: batchiq-ui
+    newName: ghcr.io/your-org/batchiq-ui
+    newTag: "0.1.0"
