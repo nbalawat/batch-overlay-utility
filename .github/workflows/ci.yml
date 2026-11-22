@@ -142,22 +142,7 @@ jobs:
       - name: Deploy the base with the CI images
         run: |
           set -euo pipefail
-          mkdir -p /tmp/ci-overlay
-          cat > /tmp/ci-overlay/kustomization.yaml <<EOF
-          apiVersion: kustomize.config.k8s.io/v1beta1
-          kind: Kustomization
-          resources: [$GITHUB_WORKSPACE/deploy/k8s/base]
-          images:
-            - {name: ghcr.io/your-org/batchiq-api, newName: batchiq-api, newTag: ci}
-            - {name: ghcr.io/your-org/batchiq-ui, newName: batchiq-ui, newTag: ci}
-          patches:
-            - target: {kind: Deployment}
-              patch: |-
-                - op: add
-                  path: /spec/template/spec/containers/0/imagePullPolicy
-                  value: Never
-          EOF
-          kubectl kustomize --load-restrictor LoadRestrictionsNone /tmp/ci-overlay | kubectl apply -f -
+          kubectl apply -k deploy/k8s/overlays/ci
           kubectl -n batchiq rollout status deploy --timeout=5m
           kubectl -n batchiq get pods
       - name: The console and the API answer through the UI service
