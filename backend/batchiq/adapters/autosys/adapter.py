@@ -8,8 +8,7 @@ from typing import Any
 from batchiq.adapters.base import ActionCommand, SchedulerAdapter
 from batchiq.adapters.registry import register
 from batchiq.core.artifacts import file_artifact
-from batchiq.domain.models import (Dependency, DependencyOrigin, Job, JobRun, RunStatus, Scheduler,
-                                   Vendor)
+from batchiq.domain.models import Dependency, DependencyOrigin, Job, JobRun, RunStatus, Scheduler, Vendor
 
 _STATUS = {"SUCCESS": RunStatus.SUCCEEDED, "FAILURE": RunStatus.FAILED, "RUNNING": RunStatus.RUNNING,
            "ACTIVATED": RunStatus.WAITING, "STARTING": RunStatus.RUNNING, "TERMINATED": RunStatus.CANCELLED,

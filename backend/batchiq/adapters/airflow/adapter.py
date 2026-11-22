@@ -9,8 +9,7 @@ from batchiq.adapters.base import ActionCommand, SchedulerAdapter
 from batchiq.adapters.registry import register
 from batchiq.config import settings
 from batchiq.core.artifacts import dataset_artifact, file_artifact
-from batchiq.domain.models import (Dependency, DependencyOrigin, Job, JobKind, JobRun, RunStatus,
-                                   Scheduler, Vendor)
+from batchiq.domain.models import Dependency, DependencyOrigin, Job, JobKind, JobRun, RunStatus, Scheduler, Vendor
 
 _STATE = {"success": RunStatus.SUCCEEDED, "failed": RunStatus.FAILED, "running": RunStatus.RUNNING,
           "queued": RunStatus.WAITING, "scheduled": RunStatus.SCHEDULED,

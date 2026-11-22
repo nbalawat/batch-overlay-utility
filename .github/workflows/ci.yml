@@ -1,20 +1,168 @@
-name: ci
-on: [push, pull_request]
+# Every test runs in the cloud (GitHub-hosted runners), never on a laptop. Same shape as nbalawat/case-management:
+#
+#   backend    unit and pipeline tests with uv, spread over the runner's cores by pytest-xdist
+#   frontend   type check and production build
+#   e2e        the real containers (docker compose) and a browser: every page renders, the demo flows work
+#   image      the API image starts as the non-root user Kubernetes runs it as, and answers
+#   k8s        the Kustomize base and every cloud overlay render, and the base deploys and answers on kind
+#   compose    the compose file is valid in every profile
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTEST_PARALLEL: -n auto --dist loadfile --durations=10
+  BATCHIQ_TODAY: "2026-11-22"   # pins the simulated estate so numbers are the same on every run
+
 jobs:
   backend:
+    name: Backend tests
     runs-on: ubuntu-latest
-    defaults: {run: {working-directory: backend}}
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.13"}
-      - run: pip install -e ".[dev]"
-      - run: pytest -q
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Lint
+        working-directory: backend
+        run: uv run --extra dev ruff check batchiq tests
+      - name: Test
+        working-directory: backend
+        env:
+          LLM_PROVIDER: offline
+        run: uv run --extra dev pytest -q $PYTEST_PARALLEL
+
   frontend:
+    name: Frontend type check and build
     runs-on: ubuntu-latest
-    defaults: {run: {working-directory: frontend}}
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: {node-version: 22}
-      - run: npm ci && npm run build
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - working-directory: frontend
+        run: npm ci
+      - working-directory: frontend
+        run: npm run build
+
+  e2e:
+    name: End-to-end in a browser against the containers
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Start the stack (offline assistant, pinned date)
+        env:
+          LLM_PROVIDER: offline
+        run: |
+          set -euo pipefail
+          docker compose up -d --build --wait --wait-timeout 300
+          for i in $(seq 1 60); do curl -sf http://localhost:8080/api/meta > /dev/null && break; sleep 2; done
+          curl -sf http://localhost:8080/api/meta > /dev/null
+      - working-directory: e2e
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: Browser tests
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://localhost:8080
+        run: npx playwright test --trace off
+      - name: Report and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+      - name: Diagnostics
+        if: failure()
+        run: docker compose logs --tail=150
+
+  image:
+    name: API image starts as a non-root user
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t batchiq-api:ci backend
+      - name: Start as the user Kubernetes runs the pods as
+        run: |
+          set -euo pipefail
+          docker run -d --name api --user 10001:10001 -e LLM_PROVIDER=offline -p 8000:8000 batchiq-api:ci
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/readyz > /dev/null; then echo "ready after $((i * 2)) s"; break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' api)" != "true" ]; then docker logs api | tail -60; exit 1; fi
+            sleep 2
+          done
+          curl -sf http://localhost:8000/api/overview > /dev/null
+          test "$(docker exec api id -u)" = "10001"
+
+  k8s:
+    name: Kubernetes manifests render for every cloud and deploy on kind
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Every overlay renders
+        run: |
+          set -euo pipefail
+          for cloud in aws azure gcp; do
+            kubectl kustomize deploy/k8s/overlays/$cloud > /tmp/$cloud.yaml
+            echo "$cloud: $(grep -c '^kind:' /tmp/$cloud.yaml) objects"
+          done
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: batchiq
+      - name: Build both images and load them into the cluster
+        run: |
+          set -euo pipefail
+          docker build -t batchiq-api:ci backend
+          docker build -t batchiq-ui:ci frontend
+          kind load docker-image batchiq-api:ci batchiq-ui:ci --name batchiq
+      - name: Deploy the base with the CI images
+        run: |
+          set -euo pipefail
+          kubectl apply -k deploy/k8s/overlays/ci
+          kubectl -n batchiq rollout status deploy --timeout=5m
+          kubectl -n batchiq get pods
+      - name: The console and the API answer through the UI service
+        run: |
+          set -euo pipefail
+          svc=$(kubectl -n batchiq get svc -o name | grep -i ui | head -1)
+          kubectl -n batchiq port-forward "$svc" 8080:80 &
+          for i in $(seq 1 30); do curl -sf http://localhost:8080/api/meta > /tmp/meta.json && break; sleep 2; done
+          python3 -c "import json; m = json.load(open('/tmp/meta.json')); print(m['scenario']['name']); assert m['scenarios']"
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl -n batchiq describe pods | tail -100
+          kubectl -n batchiq logs deploy/batchiq-api --tail=80 || true
+          kubectl -n batchiq logs deploy/batchiq-ui --tail=40 || true
+
+  compose:
+    name: Compose file is valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose --profile local-llm config -q

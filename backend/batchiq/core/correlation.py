@@ -19,8 +19,7 @@ import statistics
 from collections import defaultdict
 
 from batchiq.core.store import InMemoryEstate
-from batchiq.domain.models import (ArtifactType, Dependency, DependencyOrigin, Evidence, Job,
-                                   RunStatus)
+from batchiq.domain.models import ArtifactType, Dependency, DependencyOrigin, Evidence, Job, RunStatus
 
 _DATA_TYPES = {ArtifactType.DATASET, ArtifactType.TABLE}
 

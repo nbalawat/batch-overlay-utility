@@ -282,7 +282,7 @@ class EstateService:
         members = a.mapper.members[pid]
         timeline = []
         for jid in a.graph.topo_order(set(members)):
-            b, st, fc = a.baselines[jid], a.states[jid], a.job_fc.get(jid)
+            st = a.states[jid]
             usual_end = a.baselines[jid].typical_end_offset
             timeline.append({**self.job_brief(jid),
                              "usual_end_offset_min": usual_end, "critical": jid in a.proc_fc[pid].critical_path,

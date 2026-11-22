@@ -1,0 +1,15 @@
+# Local images on a kind cluster (CI's deploy test, or a local kind run):
+#   docker build -t batchiq-api:ci backend && docker build -t batchiq-ui:ci frontend
+#   kind load docker-image batchiq-api:ci batchiq-ui:ci && kubectl apply -k deploy/k8s/overlays/ci
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [../../base]
+images:
+  - {name: ghcr.io/your-org/batchiq-api, newName: batchiq-api, newTag: ci}
+  - {name: ghcr.io/your-org/batchiq-ui, newName: batchiq-ui, newTag: ci}
+patches:
+  - target: {kind: Deployment}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never

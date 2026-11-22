@@ -42,7 +42,7 @@ def _fmt(dt: datetime | None) -> str:
 
 
 class InsightEngine:
-    def __init__(self, a: "Analysis") -> None:
+    def __init__(self, a: Analysis) -> None:
         self.a = a
 
     # ------------------------------------------------------------------ public
