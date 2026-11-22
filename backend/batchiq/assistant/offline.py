@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from batchiq.assistant import offline_graph
 from batchiq.assistant.tools import ToolBox
 from batchiq.llm.base import AssistantResult, LLMProvider, ToolExecutor, ToolSpec
 
@@ -20,7 +21,7 @@ def _hhmm(iso: str | None) -> str:
 
 class OfflineProvider(LLMProvider):
     name = "offline"
-    model = "rules-v1"
+    model = "rules-v2"
 
     def __init__(self, toolbox: ToolBox) -> None:
         self.tb = toolbox
@@ -37,7 +38,13 @@ class OfflineProvider(LLMProvider):
         job = self._find_job(question)
         proc = self._find_process(q)
         why = re.search(r"\b(why|cause|caused|root|fail|failed|broke|wrong)\b", q)
-        if proc and why and not job:
+        impact = re.search(r"impact|affect|what happens|what if|blast", q)
+        graph_answer = None
+        if not ((proc and why and not job) or (job and (why or impact))):
+            graph_answer = offline_graph.route(q, question, job, proc, self.tb.svc.a.kg, call)
+        if graph_answer is not None:
+            text = graph_answer
+        elif proc and why and not job:
             d = call("get_business_process", process=proc)
             text = self._process(d).split("\n")[0] + "\n\n" + self._root_cause(
                 call("get_root_cause", process=proc)).split("\n", 1)[1].strip()
