@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { Hypothesis, Impact, Insight, Recommendation, SimilarIncident } from "../api/types";
 import { useEstate } from "../lib/estate";
@@ -6,28 +7,28 @@ import { pct, shortJob, vendorOf } from "../lib/format";
 import { StatusPill, VendorTag } from "./ui";
 
 export function ActionButton({ rec, subtle = false }: { rec: Recommendation; subtle?: boolean }) {
-  const { pushReceipt, refresh } = useEstate();
+  const { pushReceipt } = useEstate();
+  const navigate = useNavigate();
   const [state, setState] = useState<"idle" | "busy" | "done">("idle");
   if (!rec.action) return null;
-  const label = subtle ? ({ rerun: "Rerun", boost_priority: "Boost priority", hold: "Hold", release: "Release" }[rec.action.action] ?? rec.action.action) : { rerun: "Approve rerun", boost_priority: "Approve boost", notify: "Send alert", confirm: "Confirm link",
+  if (rec.action.action === "review") {
+    const target = rec.action.link_id ? `/links?link=${encodeURIComponent(rec.action.link_id)}` : "/links";
+    return <div className="btn-row"><button className={`btn ${subtle ? "" : "btn-primary"}`}
+      onClick={() => navigate(target)}>Open link review</button></div>;
+  }
+  const label = subtle ? ({ rerun: "Rerun", boost_priority: "Boost priority", hold: "Hold", release: "Release" }[rec.action.action] ?? rec.action.action) : { rerun: "Approve rerun", boost_priority: "Approve boost", notify: "Send alert",
     hold: "Approve hold", release: "Approve release", kill: "Approve kill" }[rec.action.action] ?? "Approve";
   return (
     <div className="btn-row">
       <button className={`btn ${subtle ? "" : "btn-primary"}`} disabled={state !== "idle"} onClick={async () => {
         setState("busy");
         try {
-          const r = await api.act({ ...rec.action!, note: rec.title });
+          const r = await api.act({ action: rec.action!.action, job_id: rec.action!.job_id,
+            process_id: rec.action!.process_id, note: rec.title });
           pushReceipt(r);
           setState("done");
-          if (rec.action!.action === "confirm") refresh();
         } catch { setState("idle"); }
       }}>{state === "done" ? "✓ Sent" : state === "busy" ? "Sending…" : label}</button>
-      {rec.action.action === "confirm" && state === "idle" && (
-        <button className="btn" onClick={async () => {
-          pushReceipt(await api.act({ action: "reject", dependency_id: rec.action!.dependency_id }));
-          refresh();
-        }}>Reject</button>
-      )}
     </div>
   );
 }

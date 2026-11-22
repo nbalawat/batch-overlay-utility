@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { AskResponse } from "../api/types";
 import { Card, MiniMarkdown } from "../components/ui";
 import { useApi } from "../lib/estate";
 
-const SUGGESTIONS = [
-  "What needs my attention right now?",
-  "Why is regulatory reporting at risk?",
-  "What is the impact of CBK_GL_EXTRACT?",
-  "Has a GL extract S0C7 happened before? How was it fixed?",
-  "Which processes might miss their SLA tonight?",
-  "Are there hidden dependencies between schedulers?",
+const SUGGESTIONS: [string, string[]][] = [
+  ["Tonight", ["What needs my attention right now?", "Why is regulatory reporting at risk?",
+    "Has a GL extract S0C7 happened before? How was it fixed?"]],
+  ["Dependencies across layers", ["How does CBK_GL_EXTRACT connect to regulatory reporting?",
+    "What does MIS_DAILY_PNL depend on?", "Who reads finance.gl_mart?", "What would break if zos-prd-01 went down?"]],
+  ["Inside one ecosystem", ["What does AutoSys depend on outside itself?", "Which AutoSys jobs fail silently?",
+    "Where can we improve runtime in Airflow?"]],
+  ["Hidden behaviour", ["What data leaves the bank?", "Which jobs send emails?", "Which API calls do ADF jobs make?"]],
+  ["Review and change", ["Which links are waiting for review?", "What changed this week?", "Which jobs does the fraud team own?"]],
 ];
 
 type Msg = { role: "user" | "assistant"; content: string; meta?: AskResponse };
@@ -22,6 +25,14 @@ export function Ask() {
   const { data: info } = useApi(api.assistantInfo);
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
+  const [params, setParams] = useSearchParams();
+  const asked = useRef(false);
+  useEffect(() => {
+    const q = params.get("q");
+    if (q && !asked.current) {
+      asked.current = true; setParams({}, { replace: true }); send(q); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function send(q: string) {
     if (!q.trim() || busy) return;
@@ -46,8 +57,13 @@ export function Ask() {
       <Card className="chat">
         <div className="chat-log">
           {msgs.length === 0 && (
-            <div className="suggestions">
-              {SUGGESTIONS.map((s) => <button key={s} className="suggestion" onClick={() => send(s)}>{s}</button>)}
+            <div className="suggestion-groups">
+              {SUGGESTIONS.map(([group, qs]) => (
+                <div key={group}>
+                  <h4>{group}</h4>
+                  <div className="suggestions">{qs.map((s) => <button key={s} className="suggestion" onClick={() => send(s)}>{s}</button>)}</div>
+                </div>
+              ))}
             </div>
           )}
           {msgs.map((m, i) => (

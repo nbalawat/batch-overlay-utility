@@ -78,15 +78,9 @@ def ecosystem(svc: EstateService, sid: str) -> dict[str, Any]:
         "container_kind": CONTAINER_KIND[s.vendor.value],
         "containers": [{"name": c, "jobs": sorted(v, key=lambda x: x["name"])} for c, v in sorted(containers.items())],
         "graph": {
-            "nodes": [{"id": jid, "name": j.name, "container": j.container, "scheduler_id": sid,
-                       "status": a.states[jid].status.value, "kind": j.kind.value, "external": False}
-                      for jid, j in mine.items()]
-            + [{"id": x, "name": jobs[x].name, "container": jobs[x].container, "scheduler_id": jobs[x].scheduler_id,
-                "status": a.states[x].status.value, "kind": jobs[x].kind.value, "external": True}
-               for x in sorted(externals)],
-            "edges": [{"id": d.id, "source": d.source, "target": d.target, "origin": d.origin.value,
-                       "review_state": d.review_state, "confidence": d.confidence, "artifact": d.artifact,
-                       "cross_scheduler": d.cross_scheduler} for d in intra + boundary]},
+            "nodes": [{**svc.job_brief(x), "external": x not in mine} for x in sorted(set(mine) | externals)],
+            "edges": [{**d.model_dump(mode="json"), "active": d in a.graph.edges} for d in intra + boundary],
+            "schedulers": [sc.model_dump() for sc in a.estate.schedulers.values()]},
         "stats": {"jobs": len(mine), "containers": len(containers), "intra_links": len(intra),
                   "boundary_links": len(boundary),
                   "pending_boundary_links": sum(1 for d in boundary if d.review_state == "suggested"),

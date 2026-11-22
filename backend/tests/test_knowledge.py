@@ -124,3 +124,9 @@ def test_changelog_replays_each_change_with_its_ticket(estate):
     assert by_ticket["CHG-1170"]["details"] == ["+ schedule Daily 01:30", "− schedule Daily 00:30"]
     # The removed condition left a gap the recommender now proposes to close.
     assert any(f["link_id"].endswith("PAY_SETTLE_RECON") for f in by_ticket["CHG-1163"]["follow_ups"])
+
+
+def test_paths_are_unique_routes(estate):
+    res = kgv.paths(estate.a.kg, GL_EXTRACT, MIS_PNL, directed=False)
+    routes = [tuple(h["id"] for h in p["hops"]) for p in res["paths"]]
+    assert routes and len(routes) == len(set(routes))

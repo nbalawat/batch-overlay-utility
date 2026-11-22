@@ -64,11 +64,14 @@ def paths(kg: KnowledgeGraph, a: str, b: str, directed: bool = True, types: str 
         if x not in kg.nodes:
             raise UnknownNode(x)
     found = kg.paths(a, b, types=_edge_types(types), directed=directed, limit=limit)
-    out = []
+    out, seen = [], set()
     for p in found:
         hops, cur = [a], a
         for e in p:
             cur = e.target if e.source == cur else e.source
             hops.append(cur)
+        if tuple(hops) in seen:          # parallel edges (e.g. DELIVERS and PART_OF) give the same route
+            continue
+        seen.add(tuple(hops))
         out.append({"hops": [node_dict(kg.nodes[h]) for h in hops], "edges": [edge_dict(e) for e in p]})
     return {"from": node_dict(kg.nodes[a]), "to": node_dict(kg.nodes[b]), "directed": directed, "paths": out}

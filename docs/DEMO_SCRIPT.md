@@ -1,4 +1,4 @@
-# Demo script (about 10 minutes)
+# Demo script (about 20 minutes)
 
 **Setup:** `docker compose up --build`, open http://localhost:8080. The default scenario is
 "GL extract abend puts regulatory filing at risk". The simulated clock reads 03:25 ET.
@@ -28,20 +28,43 @@
 - Click **Approve boost**. The toast shows the native Airflow command the overlay would issue.
   Every action is recorded in the audit log on the Insights page.
 
-## 5. Hidden dependency (1 min): Cross-scheduler lineage
-- The dashed link from Airflow's `publish_scores` to ADF's `c360_merge` is declared by no
-  scheduler. The overlay inferred it from a dataset/table name match plus 30 nights of timing,
-  at about 94% confidence. Confirm it from Insights → Hidden links.
+## 5. The secret sauce: recommended links, reviewed by their owners (4 min): Link review
+- Pick **Ana Garcia, MIS Reporting** in "Viewing as". Her queue has one link:
+  Airflow `publish_gl_mart` → AutoSys `MIS_DAILY_PNL`, 88%.
+- Walk the evidence: the P&L script's SQL reads `finance.gl_mart` (file and line), run history
+  shows the report started before the mart was ready on 6 of 30 nights, and incident
+  INC-20261020-0610 names both jobs. Finance Data Engineering already approved, with a comment.
+- Approve it. The lineage, forecasts, the knowledge graph and the findings all update. The
+  finding stays, rephrased: the overlay now watches the dependency, but the scheduler still
+  doesn't enforce it.
+- Switch to **Marco Torres** to show a rejected link (name similarity only) and the policy box:
+  rejected links come back only with new kinds of evidence.
+
+## 6. What the code does that no console shows (3 min)
+- **Ecosystems → AutoSys AE1**: boxes and jobs, a "silent" job with no alert, its graph with the
+  other schedulers in their own lanes, hosts, and the data it reads and writes.
+- **Knowledge graph**: search `finance.gl_mart`. Readers come from definitions and from code.
+  Find the path from `CBK_GL_EXTRACT` to `MIS_DAILY_PNL`: Control-M → Airflow → AutoSys.
+- **Findings**: static (a job waiting on a deleted job, a password in a script, a redundant
+  condition, data leaving the bank) and runtime (sensors poking for hours, `render_statements`
+  getting slower every night with weeks to SLA, queueing delay, stale reads).
+- **What changed**: four syncs replayed. CHG0041163 replaced a condition with a 02:00 start; the
+  next night the recon ran before its input. The recommender already proposed the link back.
 
 ## 6. Ask the estate (2 min)
 - "What needs my attention right now?"
 - "Why is regulatory reporting at risk?"
 - "What happens to payments if PAY_SETTLE_NET fails?"
+- Layered: "What would break if zos-prd-01 went down?", "What data leaves the bank?",
+  "What does AutoSys depend on outside itself?", "What changed this week?"
 - Point out the tool chips: answers come from the same grounded facts.
 
-## 7. Under the hood (1 min): Connectors
+## 7. Under the hood (2 min): Connectors and Onboarding
 - Show raw AutoSys JIL next to the unified model, then the Control-M JSON. "Adding a new
   scheduler means writing one adapter."
+- **Onboarding**: the pipeline from definitions to findings, with per-connector timings. Load the
+  "AutoSys AE2 (Wealth)" sample and Analyse: four jobs understood, a condition nothing provides,
+  and a link into the live Control-M estate proposed from a shared file.
 
 ## Alternate scenarios
 - **Warehouse contention**: no failures at all, yet the SLA drifts. Anomaly detection and the

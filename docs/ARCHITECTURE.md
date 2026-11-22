@@ -38,15 +38,43 @@ AutoSys JIL text with `condition: s(...)`, Airflow `downstream_task_ids` and dat
 (UTC in Airflow and ADF, local time in Control-M and AutoSys), so the translators do real work. New
 schedulers register with `@register("<vendor>")`.
 
-**The simulation is honest.** The ground truth (`simulation/estate.py`) includes a coupling that
-no scheduler declares: an ADF pipeline fired by a custom event after an Airflow task. The
-overlay never reads the ground truth. It has to *infer* that link from a dataset/table name match
-plus timing evidence across 30 nights, and it surfaces the link for human confirmation.
+**The simulation is honest.** The ground truth (`simulation/estate.py`) plants what a real
+estate hides: an ADF pipeline fired by an event an Airflow task publishes, an AutoSys report whose
+script reads a warehouse table on its own clock, an MQ queue between Control-M and AutoSys, a job
+waiting on a deleted job, a password in a script, a redundant condition, sensors that poke for
+hours, a job growing slower every night, and four definition changes over the last ten nights. The
+overlay never reads the ground truth. It finds each of these from definitions, code and run
+history, and the tests check that it does.
 
-**Correlation evidence is explicit.** Every dependency carries `origin` (declared, artifact or
-inferred), `confidence`, and a list of `evidence`. The graph uses a configurable confidence
-threshold, and operators can confirm or reject inferred links. The overlay learns the client's
-estate instead of relying on documentation that is often wrong.
+**Source mining is a port.** `discovery/sources.py` defines `SourceRepository` (git, Endevor,
+ARM templates at a client). Each adapter knows where its vendor keeps the code a job runs
+(`source_refs`: a JCL member, a script path, a DAG task block, an ADF activity and the notebook
+behind it). `discovery/miner.py` applies a catalogue of rules and keeps the file, line, rule and
+snippet for every fact. Credentials are detected and masked; their values never leave the miner.
+
+**Links are recommended, scored and reviewed.** `linking/evidence.py` holds independent
+strategies: definitions name the same file or dataset, code writes what another job reads, a
+queue or an event connects two jobs, one job reliably starts minutes after another, names share
+business terms. Enrichers add run-history order (with the nights the downstream started first)
+and incidents that name both jobs. The probability is the noisy-OR of the strongest weight per
+kind of evidence. Exact definition matches inside one scheduler are facts; everything else goes
+to `linking/review.py`. A link needs the owning teams at both ends (from the schedulers' owner
+fields and `catalog/people.yaml`); strong definition-level matches need only the consumer. Reject
+and "ask a question" need a reason. A rejected link comes back only if a new kind of evidence
+appears. Only approved links enter the lineage graph that drives forecasts.
+
+**The knowledge graph curates itself.** `knowledge/ontology.py` defines 16 node types and 18
+relation types with allowed endpoints; `knowledge/graph.py` rejects edges the ontology does not
+allow and records provenance on every edge. `knowledge/builder.py` rebuilds the graph on every
+sync from definitions, code, runtime, the business catalogue, reviews and incidents.
+`knowledge/changes.py` diffs two snapshots into "condition on PAY_SETTLE_NET removed; now starts
+daily 02:00", which is how the changelog is produced. The in-memory graph is a port: Apache AGE
+(openCypher on Postgres) or Neo4j behind the same interface at a client.
+
+**Findings are small rules with evidence.** `analysis/static.py` and `analysis/runtime.py` are
+lists of functions over the same inputs. Add a rule by appending a function. Static and runtime
+evidence meet: a missing dependency found in code is confirmed by the nights the job raced its
+upstream.
 
 **Business processes are defined by outcome, not by job lists.** The catalogue
 (`catalog/business_processes.yaml`) names a process's anchor jobs, SLA and services. Its
@@ -73,7 +101,10 @@ Docker Compose or any Kubernetes cluster, and only the ingress overlay changes p
 | Step 4A: predictive analytics (delay magnitude, SLA breach probability) | `Forecaster` |
 | Step 4A: remediation tool (proposals, low-priority actions) | Recommendations + native action translation |
 | RAG knowledge base layer | `intelligence/knowledge.py` (TF-IDF now, pgvector later) |
-| Step 4B / step 5: team reviews and acts | Approve buttons, audit log, link confirmation |
+| Step 4B / step 5: team reviews and acts | Approve buttons, audit log, link review with owner sign-off |
+| Estate visibility and static analysis | Knowledge graph, Ecosystems, Findings (static) |
+| Runtime insight and improvement | Findings (runtime): sensors, trends, queueing, stale reads, critical-path leverage |
+| Low-maintenance onboarding | Onboarding sandbox, nightly graph rebuild and changelog |
 | AI assist tool | Ask the estate |
 
 ## Path from prototype to pilot

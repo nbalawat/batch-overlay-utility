@@ -4,7 +4,7 @@ import { InsightView } from "../components/InsightView";
 import { Card, Loading, StatusPill } from "../components/ui";
 import { useApi, useEstate } from "../lib/estate";
 
-const TYPES = [["", "All"], ["sla_risk", "SLA risk"], ["failure", "Failures"], ["anomaly", "Anomalies"], ["correlation", "Hidden links"]];
+const TYPES = [["", "All"], ["sla_risk", "SLA risk"], ["failure", "Failures"], ["anomaly", "Anomalies"], ["stale_data", "Stale data"], ["correlation", "Hidden links"]];
 
 export function Insights() {
   const [type, setType] = useState("");
