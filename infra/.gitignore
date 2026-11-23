@@ -1,0 +1,10 @@
+# OpenTofu working files: providers, plans and local state never go in Git (the setup's state lives on the laptop,
+# each machine's in the setup's encrypted state bucket).
+.tofu/
+.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.*
+modules/**/.terraform.lock.hcl
+stacks/**/.terraform.lock.hcl
+__pycache__/

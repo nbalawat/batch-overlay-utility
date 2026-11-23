@@ -69,6 +69,7 @@ needs to run on a local machine:
 | End-to-end | `docker compose up` of the real images, then Playwright in Chromium: every page renders with no console errors or 5xx, and the demo flows work |
 | Image | the API image starts as the non-root user Kubernetes uses, and answers |
 | Kubernetes | the base and the AWS, Azure and GCP overlays render, and the base deploys and answers on a kind cluster |
+| Cloud VM (`Infra` workflow) | OpenTofu format, the machine contract, `validate` and mocked-provider tests; ShellCheck; `cloud.py` unit tests on Python 3.9 and 3.12 |
 | Compose | the compose file is valid in every profile |
 
 `make ci-status` lists the runs for your branch. To run the same things somewhere with Docker: `make test`,
@@ -114,7 +115,25 @@ Set `LLM_PROVIDER`:
 | `openai_compatible` | Any self-hosted open-source model behind an OpenAI-compatible endpoint (vLLM, Ollama, TGI, LiteLLM). `docker compose --profile local-llm up` starts Ollama. |
 | `offline` | Deterministic, rule-based answers from the same tools. No network needed. |
 
-## Deploy (cloud-agnostic)
+## Demo on a cloud VM (AWS)
+
+The quickest way to show the demo: one small VM in your own AWS account, built the same way as the cloud machine in
+nbalawat/case-management. Only SSH is open, and only to your address. The VM stops itself after 10 hours. A day of
+demos costs about $0.45, and a stopped VM costs about $2.40 a month for its disk.
+
+```bash
+brew install opentofu
+aws sso login --profile <admin-profile> && export AWS_PROFILE=<admin-profile>   # or: aws configure
+infra/bin/cloud.py setup          # once per account: state bucket, state key, least-privilege operator role
+infra/bin/cloud.py up             # about 10 minutes the first time
+ssh batchiq                       # while open: http://localhost:8080
+infra/bin/cloud.py stop           # or down, to delete everything
+```
+
+`up --web` also opens the console on `http://<vm-address>:8080` to your address only. Details, costs and the optional
+Claude key are in [infra/README.md](infra/README.md).
+
+## Deploy on Kubernetes (cloud-agnostic)
 
 Plain Kubernetes manifests with Kustomize. Only the ingress differs per cloud:
 
@@ -144,6 +163,7 @@ backend/batchiq/
   api/             FastAPI app and routes
 frontend/src/      React + TypeScript console (React Flow lineage, SVG charts)
 deploy/k8s/        Kustomize base + AWS/Azure/GCP overlays
+infra/             the demo on a cloud VM: cloud.py, OpenTofu modules (cloud-neutral contract, AWS first), cloud-init
 docs/              architecture and demo script
 ```
 

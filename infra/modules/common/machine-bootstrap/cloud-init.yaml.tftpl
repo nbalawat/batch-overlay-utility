@@ -1,0 +1,51 @@
+#cloud-config
+# BatchIQ cloud machine (infra/modules/common/machine-bootstrap). Ubuntu 24.04 on any cloud.
+users:
+  - name: ${ssh_user}
+    gecos: BatchIQ
+    shell: /bin/bash
+    groups: [sudo]
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+
+ssh_pwauth: false
+# The small machine has 4 GB; swap keeps the first image build from running out of memory.
+swap:
+  filename: /swapfile
+  size: 2G
+  maxsize: 2G
+disable_root: true
+package_update: true
+package_upgrade: true
+packages: [ca-certificates, curl, git, jq, unattended-upgrades]
+
+write_files:
+  - path: /etc/batchiq/machine.env
+    permissions: "0644"
+    content: |
+      ${indent(6, settings)}
+  - path: /usr/local/bin/batchiq
+    permissions: "0755"
+    encoding: b64
+    content: ${helper}
+  - path: /etc/systemd/system/batchiq.service
+    permissions: "0644"
+    encoding: b64
+    content: ${service}
+  - path: /etc/systemd/system/batchiq-autostop.service
+    permissions: "0644"
+    encoding: b64
+    content: ${autostop}
+  - path: /etc/ssh/sshd_config.d/90-batchiq.conf
+    permissions: "0644"
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+      AllowUsers ${ssh_user}
+
+runcmd:
+  - [systemctl, reload, ssh]
+  - [/usr/local/bin/batchiq, provision]
