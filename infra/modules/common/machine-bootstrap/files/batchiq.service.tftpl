@@ -1,0 +1,21 @@
+[Unit]
+Description=BatchIQ demo stack (docker compose in /opt/batchiq/src)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/batchiq/machine.env
+# The owner runs the stack, as on a laptop; it is in the docker group.
+User=${ssh_user}
+ExecStart=/usr/local/bin/batchiq run
+ExecStop=/usr/local/bin/batchiq halt
+Restart=on-failure
+RestartSec=15
+# The first start builds both images (a few minutes).
+TimeoutStartSec=0
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target
